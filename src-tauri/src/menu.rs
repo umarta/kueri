@@ -59,6 +59,8 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .item(&item(app, "toggle_log", "Toggle Query Log", None)?)
         .separator()
         .item(&item(app, "open_palette", "Open Anything…", Some("CmdOrCtrl+P"))?)
+        .separator()
+        .item(&item(app, "force_reload", "Force Reload", Some("CmdOrCtrl+Shift+R"))?)
         .build()?;
 
     let conn_menu = SubmenuBuilder::new(app, "Connection")

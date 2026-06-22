@@ -393,6 +393,7 @@
       case "refresh": refresh(); break;
       case "disconnect": disconnect(); break;
       case "open_palette": paletteOpen = true; break;
+      case "force_reload": window.location.reload(); break;
       case "data_view": if (tab.kind === "table") setView("data"); break;
       case "structure_view": if (tab.kind === "table") setView("structure"); break;
       case "toggle_sidebar": sidebarOpen = !sidebarOpen; break;
