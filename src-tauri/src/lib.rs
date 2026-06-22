@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod error;
+mod menu;
 mod persist;
 
 use db::pool::AppState;
@@ -9,6 +10,10 @@ use db::pool::AppState;
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .setup(|app| {
+            menu::build(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::connect,
             commands::disconnect,

@@ -8,6 +8,8 @@
   export let editable = false;
   /** Currently selected row index (drives the detail panel + highlight). */
   export let selectedRow: number | null = null;
+  /** Alternating row background colors (a workspace setting). */
+  export let altRows = true;
 
   const dispatch = createEventDispatcher<{ commit: RowEdit[]; selectRow: number }>();
 
@@ -147,6 +149,7 @@
               role="row"
               tabindex="-1"
               aria-rowindex={i + 1}
+              class:alt={altRows && i % 2 === 1}
               class:selected={selectedRow === i}
               on:click={() => dispatch("selectRow", i)}
               style="transform: translateY({vrow.start}px); height: {ROW_H}px; grid-template-columns: {template}"
@@ -231,6 +234,7 @@
     display: grid; position: absolute; top: 0; left: 0; width: 100%;
     border-bottom: 1px solid var(--hairline);
   }
+  .row.alt .cell { background: rgba(255, 255, 255, 0.018); }
   .row:hover .cell { background: var(--bg-elevated); }
   .row.selected .cell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
   .row.selected .gutter { background: color-mix(in srgb, var(--accent) 26%, transparent); color: var(--ink); }

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, onMount, onDestroy } from "svelte";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import Welcome from "./components/Welcome.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import WorkspaceRail from "./components/WorkspaceRail.svelte";
@@ -12,6 +13,8 @@
   import RowDetail from "./components/RowDetail.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
   import LogPanel from "./components/LogPanel.svelte";
+  import Settings from "./components/Settings.svelte";
+  import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
   } from "./lib/stores/connection";
@@ -26,6 +29,7 @@
   let logOpen = false;
   let detailOpen = false;
   let inserting = false;
+  let settingsOpen = false;
 
   // ── Query tabs ──────────────────────────────────────────────────────────────
   let seq = 1;
@@ -149,7 +153,7 @@
     t.selected = { schema, table };
     t.title = table;
     t.selectedRow = null;
-    t.doc = `SELECT * FROM "${schema}"."${table}"${buildWhere(t)} LIMIT 200;`;
+    t.doc = `SELECT * FROM "${schema}"."${table}"${buildWhere(t)} LIMIT ${$settings.rowLimit};`;
     sync();
     await exec(t, t.doc);
     t.editableTable = t.result ? { schema, table } : null;
@@ -377,7 +381,42 @@
     if (tab.selected) await browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
-  // ── Keyboard shortcuts (TablePlus-style, macOS ⌘ / ⌃) ───────────────────────
+  // ── Native menu (ids emitted from the Rust menu) ────────────────────────────
+  function handleMenu(id: string) {
+    switch (id) {
+      case "new_query_tab": case "new_sql": newTab(); break;
+      case "new_table": sidebar?.openAddTable(); break;
+      case "close_tab": if (tabs.length > 1) closeTab(activeId); break;
+      case "new_connection": addOpen = true; break;
+      case "switch_schema": sidebar?.focusSchema(); break;
+      case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
+      case "refresh": refresh(); break;
+      case "disconnect": disconnect(); break;
+      case "open_palette": paletteOpen = true; break;
+      case "data_view": if (tab.kind === "table") setView("data"); break;
+      case "structure_view": if (tab.kind === "table") setView("structure"); break;
+      case "toggle_sidebar": sidebarOpen = !sidebarOpen; break;
+      case "toggle_detail": detailOpen = !detailOpen; break;
+      case "toggle_log": logOpen = !logOpen; break;
+      case "commit": grid?.commitStaged(); break;
+      case "add_row": beginInsert(); break;
+      case "prev_tab": cycleTab(-1); break;
+      case "next_tab": cycleTab(1); break;
+      case "settings": settingsOpen = true; break;
+    }
+  }
+
+  let unlistenMenu: UnlistenFn | undefined;
+  onMount(async () => {
+    try {
+      unlistenMenu = await listen<string>("menu", (e) => handleMenu(e.payload));
+    } catch {
+      /* not running under Tauri (browser dev) */
+    }
+  });
+  onDestroy(() => unlistenMenu?.());
+
+  // ── Keyboard shortcuts (the rest stay in the frontend; menu owns the globals) ─
   function isTextField(el: Element | null): boolean {
     if (!el) return false;
     const tag = el.tagName;
@@ -394,8 +433,11 @@
     const shift = e.shiftKey;
     const field = isTextField(document.activeElement);
 
-    // Esc closes the command palette.
-    if (e.key === "Escape" && paletteOpen) { paletteOpen = false; return; }
+    // Esc closes overlays.
+    if (e.key === "Escape") {
+      if (paletteOpen) { paletteOpen = false; return; }
+      if (settingsOpen) { settingsOpen = false; return; }
+    }
 
     // Space → toggle the row-detail panel (when not typing).
     if (!meta && !ctrl && !shift && e.key === " " && !field && (tab.result?.rows.length ?? 0) > 0) {
@@ -405,32 +447,27 @@
       return;
     }
 
-    if (!meta) return; // remaining shortcuts all use ⌘
+    if (!meta) return;
 
-    // ⌘⌃[ / ⌘⌃] → Data / Structure view (table tab)
+    // ⌘⌃[ / ⌘⌃] → Data / Structure view (no menu accelerator, so handled here).
     if (ctrl && (e.key === "[" || e.key === "]")) {
       if (tab.kind === "table") { e.preventDefault(); setView(e.key === "[" ? "data" : "structure"); }
       return;
     }
-    // ⌘1..9 → jump to tab N
+    // ⌘1..9 → jump to tab N.
     if (!ctrl && !shift && /^[1-9]$/.test(e.key)) {
       const i = parseInt(e.key, 10) - 1;
       if (tabs[i]) { e.preventDefault(); activeId = tabs[i].id; }
       return;
     }
-
-    switch (e.key.toLowerCase()) {
-      case "t": e.preventDefault(); newTab(); break;            // New tab
-      case "e": e.preventDefault(); newTab(); break;            // Open SQL editor (new query tab)
-      case "w": if (tabs.length > 1) { e.preventDefault(); closeTab(activeId); } break; // Close tab
-      case "p": e.preventDefault(); paletteOpen = true; break;  // Open Anything
-      case "r": e.preventDefault(); refresh(); break;           // Refresh workspace
-      case "k": e.preventDefault(); sidebar?.focusSchema(); break; // Switch schema/database
-      case "s": e.preventDefault(); grid?.commitStaged(); break;   // Commit changes
-      case "f": if (tab.kind === "table") { e.preventDefault(); tab.filtersOpen = !tab.filtersOpen; sync(); } break; // Filter
-      case "[": e.preventDefault(); cycleTab(-1); break;        // Previous tab
-      case "]": e.preventDefault(); cycleTab(1); break;         // Next tab
+    // ⌘F → toggle filters on a table tab (the editor keeps its own find elsewhere).
+    if (!ctrl && !shift && e.key.toLowerCase() === "f" && tab.kind === "table") {
+      e.preventDefault();
+      tab.filtersOpen = !tab.filtersOpen;
+      sync();
     }
+    // Everything else (⌘T/E/W/P/R/K/S/I/N, ⌘[/], run, commit, …) is owned by the
+    // native menu, which emits a "menu" event handled in handleMenu().
   }
 </script>
 
@@ -531,6 +568,7 @@
                     bind:this={grid}
                     result={tab.result}
                     editable={editing}
+                    altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
@@ -576,6 +614,10 @@
       <Welcome dismissable on:connected={onConnected} on:cancel={() => (addOpen = false)} />
     </div>
   {/if}
+{/if}
+
+{#if settingsOpen}
+  <Settings on:close={() => (settingsOpen = false)} />
 {/if}
 
 <style>

@@ -23,6 +23,11 @@
     schemaSelectEl?.focus();
   }
 
+  /** File → New Table… (from the native menu). */
+  export function openAddTable() {
+    openAdd();
+  }
+
   $: kind = ($activeConnection?.kind ?? "postgres") as DbKind;
 
   // Add-table (column designer)
