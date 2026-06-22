@@ -1,0 +1,159 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Kueri — design tokens + base
+   Native macOS dark, neutral grays + system blue. Color carries meaning
+   (selection, primary action, connection environment), never mood.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Layered neutral surfaces (app → content → panel → elevated) */
+  --bg-app: #161618;        /* window base, behind panels */
+  --bg-content: #1b1b1d;    /* main content / data area */
+  --bg-panel: #202023;      /* sidebar, toolbar, footer */
+  --bg-elevated: #2a2a2e;   /* popovers, inputs, hover surfaces */
+  --bg-hover: #2f2f34;      /* row/item hover */
+  --bg-active: #38383e;     /* pressed */
+
+  /* Hairlines & borders */
+  --border: #323237;
+  --border-strong: #3d3d44;
+  --hairline: rgba(255, 255, 255, 0.07);
+
+  /* Ink ramp */
+  --ink: #ebebef;           /* primary text */
+  --ink-soft: #c4c4cc;      /* secondary text */
+  --muted: #9494a0;         /* labels, captions (≥4.5:1 on panels) */
+  --faint: #6b6b76;         /* disabled, hints */
+
+  /* System blue — selection + primary action */
+  --accent: #0a84ff;
+  --accent-hover: #3897ff;
+  --accent-press: #0066d6;
+  --accent-soft: rgba(10, 132, 255, 0.18);  /* selected row tint */
+  --accent-ink: #ffffff;
+  --focus-ring: rgba(10, 132, 255, 0.55);
+
+  /* Connection environment / status dots (meaning-bearing) */
+  --status-local: #30d158;     /* green  */
+  --status-staging: #ffd60a;   /* yellow */
+  --status-prod: #ff453a;      /* red    */
+  --status-blue: #0a84ff;
+  --status-orange: #ff9f0a;
+  --status-purple: #bf5af2;
+  --status-gray: #98989f;
+
+  /* Semantic */
+  --danger: #ff6961;
+  --danger-soft: rgba(255, 105, 97, 0.13);
+  --warn: #ffd60a;
+  --success: #30d158;
+
+  /* Radii — small & native, never toy-sized */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 11px;
+  --r-pill: 999px;
+
+  /* Spacing scale */
+  --s-1: 4px;  --s-2: 6px;  --s-3: 8px;  --s-4: 10px;
+  --s-5: 12px; --s-6: 16px; --s-7: 20px; --s-8: 28px; --s-9: 40px;
+
+  /* Elevation */
+  --shadow-pop: 0 0 0 1px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.5);
+  --shadow-modal: 0 0 0 1px rgba(0,0,0,0.4), 0 20px 60px rgba(0,0,0,0.6);
+
+  /* Motion — convey state, never decorate (150–250ms) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 110ms;
+  --t-base: 170ms;
+
+  /* z-index scale (semantic, never 9999) */
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-modal-backdrop: 200;
+  --z-modal: 210;
+  --z-toast: 300;
+  --z-tooltip: 400;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg-app);
+  color: var(--ink);
+  overflow: hidden;           /* app shell owns scrolling, not the page */
+  user-select: none;          /* native app feel; opt back in for data */
+}
+
+::selection { background: var(--accent-soft); }
+
+/* Native-feeling thin scrollbars */
+*::-webkit-scrollbar { width: 11px; height: 11px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--r-pill);
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.26); background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── Shared primitives ──────────────────────────────────────────────────── */
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+  height: 28px; padding: 0 var(--s-5); border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 500; white-space: nowrap;
+  background: var(--bg-elevated); color: var(--ink-soft);
+  border: 1px solid var(--border-strong);
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.btn:hover { background: var(--bg-hover); color: var(--ink); }
+.btn:active { background: var(--bg-active); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+.btn-primary {
+  background: var(--accent); color: var(--accent-ink);
+  border-color: transparent; font-weight: 600;
+}
+.btn-primary:hover { background: var(--accent-hover); color: var(--accent-ink); }
+.btn-primary:active { background: var(--accent-press); }
+.btn-primary:disabled { background: var(--accent); }
+
+.btn-ghost {
+  background: transparent; border-color: transparent; color: var(--muted);
+  height: 24px; padding: 0 var(--s-3);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--ink); }
+
+/* Inputs */
+.field {
+  width: 100%; height: 30px; padding: 0 var(--s-4);
+  background: var(--bg-content); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  font: inherit; transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+.field::placeholder { color: var(--faint); }
+.field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+select.field { appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239494a0' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right var(--s-4) center; padding-right: var(--s-8);
+}
+
+/* Visible focus for keyboard users on interactive non-field elements */
+:focus-visible { outline: none; }
+.focusable:focus-visible { box-shadow: 0 0 0 2px var(--focus-ring); border-radius: var(--r-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
