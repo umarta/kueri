@@ -25,6 +25,7 @@
   let paletteOpen = false;
   let logOpen = false;
   let detailOpen = false;
+  let inserting = false;
 
   // ── Query tabs ──────────────────────────────────────────────────────────────
   let seq = 1;
@@ -264,6 +265,36 @@
     }
   }
 
+  // ── Insert row ────────────────────────────────────────────────────────────
+  function beginInsert() {
+    if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) return;
+    inserting = true;
+    detailOpen = true;
+  }
+
+  async function insertRow(e: CustomEvent<Record<string, string | null>>) {
+    const t = tab;
+    const tbl = t.selected;
+    if (!tbl || !$activeConnectionId) return;
+    const updates = e.detail;
+    const set = Object.keys(updates);
+    const sql = set.length
+      ? `INSERT INTO "${tbl.schema}"."${tbl.table}" (${set.map((c) => `"${c}"`).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
+      : `INSERT INTO "${tbl.schema}"."${tbl.table}" DEFAULT VALUES;`;
+    t.running = true; t.error = null; sync();
+    const start = performance.now();
+    try {
+      await api.executeQuery($activeConnectionId, sql);
+      logSql(sql, { ms: Math.round(performance.now() - start) });
+    } catch (err) {
+      t.error = String(err); t.running = false; sync();
+      logSql(sql, { ms: Math.round(performance.now() - start), error: String(err) });
+      return;
+    }
+    t.running = false; inserting = false; sync();
+    await browseTable(t, tbl.schema, tbl.table);
+  }
+
   // ── Connection lifecycle (multi-workspace) ───────────────────────────────────
   // Each open connection keeps its own tab set; we stash the active one's tabs
   // before switching so they're restored when the user comes back.
@@ -458,6 +489,12 @@
             {#if tab.selected}<span class="cur">{tab.selected.schema}.{tab.selected.table}</span>{/if}
             <div class="sub-spacer"></div>
             {#if tab.view === "data"}
+              {#if editing}
+                <button class="tab addrow" on:click={beginInsert} title="Insert a new row">
+                  <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true"><path d="M7 3v8M3 7h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  Row
+                </button>
+              {/if}
               <button class="tab" class:active={tab.filtersOpen} on:click={() => { tab.filtersOpen = !tab.filtersOpen; sync(); }}>
                 Filters{tab.filters.length ? ` (${tab.filters.length})` : ""}
               </button>
@@ -496,7 +533,7 @@
                     editable={editing}
                     selectedRow={tab.selectedRow}
                     on:commit={commitEdits}
-                    on:selectRow={(e) => { tab.selectedRow = e.detail; detailOpen = true; sync(); }}
+                    on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
                   />
                 </div>
                 {#if logOpen}
@@ -505,15 +542,17 @@
                   </div>
                 {/if}
               </div>
-              {#if detailOpen && tab.result}
+              {#if (detailOpen && tab.result) || inserting}
                 <div class="detail-col">
                   <RowDetail
                     result={tab.result}
                     index={tab.selectedRow}
                     columns={tab.columns}
                     editable={editing}
+                    insert={inserting}
                     on:commit={commitEdits}
-                    on:close={() => (detailOpen = false)}
+                    on:insert={insertRow}
+                    on:close={() => { detailOpen = false; inserting = false; }}
                   />
                 </div>
               {/if}
@@ -560,6 +599,8 @@
   }
   .tab:hover { color: var(--ink); }
   .tab.active { background: var(--bg-elevated); color: var(--ink); }
+  .addrow { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); }
+  .addrow:hover { color: var(--accent); background: var(--bg-elevated); }
   .cur { margin-left: var(--s-3); font-size: 11.5px; color: var(--faint); font-family: var(--font-mono); }
 
   .result { flex: 1; display: flex; flex-direction: column; min-height: 0; }

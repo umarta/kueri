@@ -6,71 +6,83 @@
   export let index: number | null = null;
   export let columns: ColumnInfo[] = [];
   export let editable = false;
+  /** Insert mode: a blank form built from `columns` for a new row. */
+  export let insert = false;
 
-  const dispatch = createEventDispatcher<{ commit: RowEdit[]; close: void }>();
+  const dispatch = createEventDispatcher<{
+    commit: RowEdit[];
+    insert: Record<string, string | null>;
+    close: void;
+  }>();
 
   let edits: Record<string, string | null> = {};
   let key = "";
-  let menu: { col: string; c: number; right: number; top: number; json: boolean } | null = null;
+  let menu: { col: string; i: number; right: number; top: number; json: boolean } | null = null;
 
-  $: rowKey = `${result?.columns.length ?? 0}:${index}`;
-  $: if (rowKey !== key) {
-    key = rowKey;
-    edits = {};
-    menu = null;
-  }
+  // Reset when the target changes (row selection, or entering/leaving insert mode).
+  $: rowKey = insert ? `insert:${columns.length}` : `${result?.columns.length ?? 0}:${index}`;
+  $: if (rowKey !== key) { key = rowKey; edits = {}; menu = null; }
 
   $: row = result && index !== null ? result.rows[index] : null;
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
 
+  type Entry = { col: string; type: string; i: number };
+  $: entries = (insert
+    ? columns.map((c, i) => ({ col: c.name, type: c.data_type, i }))
+    : result
+      ? result.columns.map((col, i) => ({ col, type: typeMap.get(col) ?? "", i }))
+      : []) as Entry[];
+
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
   const isNull = (v: unknown) => v === null || v === undefined;
-
   function fmt(v: unknown): string {
     if (v === null || v === undefined) return "";
     if (typeof v === "object") return JSON.stringify(v);
     return String(v);
   }
-  function prettyJson(s: string): string {
-    try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
-  }
-  function minifyJson(s: string): string {
-    try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
-  }
+  const prettyJson = (s: string) => { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } };
+  const minifyJson = (s: string) => { try { return JSON.stringify(JSON.parse(s)); } catch { return s; } };
 
-  /** Current displayed string for a column (staged edit wins; null → ""). */
-  const curStr = (col: string, c: number): string =>
-    col in edits ? (edits[col] ?? "") : fmt(row?.[c]);
-  /** Is this column currently NULL (staged or original)? */
-  const nulled = (col: string, c: number): boolean =>
-    col in edits ? edits[col] === null : isNull(row?.[c]);
+  const NULLK = "\0NULL";
+  const orig = (e: Entry) => (insert ? "" : isNull(row?.[e.i]) ? NULLK : fmt(row?.[e.i]));
+  const curStr = (e: Entry) => (e.col in edits ? edits[e.col] ?? "" : insert ? "" : fmt(row?.[e.i]));
+  const nulled = (e: Entry) => (e.col in edits ? edits[e.col] === null : insert ? false : isNull(row?.[e.i]));
+  const provided = (e: Entry) => e.col in edits; // insert: was this column given a value?
 
-  /** Stage a value, or drop the edit if it matches the original. */
-  function setVal(col: string, orig: unknown, v: string | null) {
-    const origKey = isNull(orig) ? "\0NULL" : fmt(orig);
-    const newKey = v === null ? "\0NULL" : v;
-    if (newKey === origKey) delete edits[col];
-    else edits[col] = v;
+  function setVal(e: Entry, v: string | null) {
+    if (insert) {
+      if (v === "") delete edits[e.col];
+      else edits[e.col] = v;
+    } else {
+      const nk = v === null ? NULLK : v;
+      if (nk === orig(e)) delete edits[e.col];
+      else edits[e.col] = v;
+    }
     edits = edits;
   }
-
-  function jsonDisplay(col: string, c: number): string {
-    if (col in edits) return edits[col] ?? "";
-    return prettyJson(fmt(row?.[c]));
+  function unset(e: Entry) {
+    delete edits[e.col];
+    edits = edits;
   }
+  const jsonDisplay = (e: Entry) =>
+    e.col in edits ? edits[e.col] ?? "" : insert ? "" : prettyJson(fmt(row?.[e.i]));
 
-  function openMenu(col: string, c: number, e: MouseEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const json = isJson(typeMap.get(col) ?? "");
-    menu = { col, c, right: window.innerWidth - r.right, top: r.bottom + 4, json };
+  function openMenu(e: Entry, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    menu = { col: e.col, i: e.i, right: window.innerWidth - r.right, top: r.bottom + 4, json: isJson(e.type) };
   }
+  const menuEntry = (): Entry | undefined => entries.find((x) => x.col === menu?.col);
 
   $: dirty = Object.keys(edits).length;
+  $: hasForm = insert ? columns.length > 0 : !!(result && row);
 
   function save() {
     if (!result || index === null || !dirty) return;
     dispatch("commit", [{ rowIndex: index, original: result.rows[index], updates: { ...edits } }]);
+  }
+  function doInsert() {
+    dispatch("insert", { ...edits });
   }
 </script>
 
@@ -78,67 +90,76 @@
 
 <aside class="detail" aria-label="Row detail">
   <header class="head">
-    <span class="title">{index !== null ? `Row ${index + 1}` : "Row"}</span>
+    <span class="title">{insert ? "New row" : index !== null ? `Row ${index + 1}` : "Row"}</span>
     <button class="close" on:click={() => dispatch("close")} title="Close" aria-label="Close">
       <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
     </button>
   </header>
 
-  {#if result && row}
+  {#if hasForm}
     <div class="fields">
-      {#each result.columns as col, c (col)}
-        {@const type = typeMap.get(col) ?? ""}
+      {#each entries as e (e.col)}
         <div class="rd-field">
           <div class="fhead">
-            <span class="fname">{col}</span>
-            {#if type}<span class="ftype">{type}</span>{/if}
+            <span class="fname">{e.col}</span>
+            {#if e.type}<span class="ftype">{e.type}</span>{/if}
           </div>
 
-          {#if editable}
-            <div class="rd-control" class:edited={col in edits} class:nulled={nulled(col, c)}>
-              {#if isBool(type)}
+          {#if insert || editable}
+            <div class="rd-control" class:edited={e.col in edits} class:nulled={nulled(e)}>
+              {#if isBool(e.type)}
                 <select
                   class="rd-input rd-select"
-                  aria-label={col}
-                  on:change={(e) => setVal(col, row[c], e.currentTarget.value === "__rd_null__" ? null : e.currentTarget.value)}
+                  aria-label={e.col}
+                  on:change={(ev) => {
+                    const v = ev.currentTarget.value;
+                    if (v === "__rd_default__") unset(e);
+                    else setVal(e, v === "__rd_null__" ? null : v);
+                  }}
                 >
-                  <option value="true" selected={curStr(col, c) === "true" && !nulled(col, c)}>true</option>
-                  <option value="false" selected={curStr(col, c) === "false" && !nulled(col, c)}>false</option>
-                  <option value="__rd_null__" selected={nulled(col, c)}>NULL</option>
+                  {#if insert}<option value="__rd_default__" selected={!provided(e)}>(default)</option>{/if}
+                  <option value="true" selected={curStr(e) === "true" && provided(e) && !nulled(e)}>true</option>
+                  <option value="false" selected={curStr(e) === "false" && provided(e) && !nulled(e)}>false</option>
+                  <option value="__rd_null__" selected={nulled(e)}>NULL</option>
                 </select>
-              {:else if isJson(type)}
+              {:else if isJson(e.type)}
                 <textarea
                   class="rd-input rd-textarea"
-                  class:nullph={nulled(col, c)}
-                  aria-label={col}
+                  class:nullph={nulled(e)}
+                  aria-label={e.col}
                   rows="6"
                   spellcheck="false"
-                  placeholder={nulled(col, c) ? "NULL" : ""}
-                  value={nulled(col, c) ? "" : jsonDisplay(col, c)}
-                  on:input={(e) => setVal(col, row[c], e.currentTarget.value)}
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : ""}
+                  value={nulled(e) ? "" : jsonDisplay(e)}
+                  on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 ></textarea>
-                <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(e) => openMenu(col, c, e)}>⋯</button>
+                <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else}
                 <input
                   class="rd-input"
-                  class:nullph={nulled(col, c)}
-                  aria-label={col}
+                  class:nullph={nulled(e)}
+                  aria-label={e.col}
                   spellcheck="false"
-                  placeholder={nulled(col, c) ? "NULL" : ""}
-                  value={nulled(col, c) ? "" : curStr(col, c)}
-                  on:input={(e) => setVal(col, row[c], e.currentTarget.value)}
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : ""}
+                  value={nulled(e) ? "" : curStr(e)}
+                  on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 />
-                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(e) => openMenu(col, c, e)}>⋯</button>
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {/if}
             </div>
           {:else}
-            <div class="fval ro" class:nullv={isNull(row[c])}>{isNull(row[c]) ? "NULL" : isJson(type) ? prettyJson(fmt(row[c])) : fmt(row[c])}</div>
+            <div class="fval ro" class:nullv={isNull(row?.[e.i])}>{isNull(row?.[e.i]) ? "NULL" : isJson(e.type) ? prettyJson(fmt(row?.[e.i])) : fmt(row?.[e.i])}</div>
           {/if}
         </div>
       {/each}
     </div>
 
-    {#if editable}
+    {#if insert}
+      <footer class="foot">
+        <span class="dirty">{dirty ? `${dirty} value${dirty === 1 ? "" : "s"} set` : "all defaults"}</span>
+        <button class="save-btn" on:click={doInsert}>Insert</button>
+      </footer>
+    {:else if editable}
       <footer class="foot">
         <span class="dirty">{dirty ? `${dirty} changed` : "No changes"}</span>
         <button class="save-btn" on:click={save} disabled={!dirty}>Save</button>
@@ -154,12 +175,12 @@
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
   <div class="menu-backdrop" on:click={() => (menu = null)}></div>
   <div class="rd-menu" style="right: {m.right}px; top: {m.top}px;">
-    <button on:click={() => { setVal(m.col, row?.[m.c], null); menu = null; }}>Set NULL</button>
-    <button on:click={() => { setVal(m.col, row?.[m.c], ""); menu = null; }}>Set empty</button>
+    <button on:click={() => { const e = menuEntry(); if (e) setVal(e, null); menu = null; }}>Set NULL</button>
+    <button on:click={() => { const e = menuEntry(); if (e) setVal(e, ""); menu = null; }}>Set empty</button>
     {#if m.json}
       <div class="sep"></div>
-      <button on:click={() => { setVal(m.col, row?.[m.c], prettyJson(curStr(m.col, m.c))); menu = null; }}>Pretty</button>
-      <button on:click={() => { setVal(m.col, row?.[m.c], minifyJson(curStr(m.col, m.c))); menu = null; }}>Minify</button>
+      <button on:click={() => { const e = menuEntry(); if (e) setVal(e, prettyJson(curStr(e))); menu = null; }}>Pretty</button>
+      <button on:click={() => { const e = menuEntry(); if (e) setVal(e, minifyJson(curStr(e))); menu = null; }}>Minify</button>
     {/if}
   </div>
 {/if}
@@ -183,7 +204,6 @@
   .fval.ro { user-select: text; white-space: pre-wrap; min-height: 18px; padding: var(--s-1) 0; }
   .nullv { color: var(--faint); font-style: italic; }
 
-  /* ── Editable controls ─────────────────────────────────────── */
   .rd-control { position: relative; }
   .rd-input {
     appearance: none; -webkit-appearance: none;
@@ -210,7 +230,6 @@
   .rd-menu-btn.top { top: 5px; transform: none; }
   .rd-menu-btn:hover { color: var(--ink); background: var(--bg-elevated); }
 
-  /* ── Quick-value menu (fixed so it escapes the panel's overflow) ── */
   .menu-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
   .rd-menu {
     position: fixed; z-index: var(--z-dropdown); min-width: 140px;
