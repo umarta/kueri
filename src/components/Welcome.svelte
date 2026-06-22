@@ -88,17 +88,31 @@
   {/if}
   <aside class="brand">
     <div class="logo">
-      <svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+      <svg viewBox="0 0 64 64" width="60" height="60" aria-hidden="true">
         <defs>
-          <linearGradient id="kueri-mark" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#3897ff" />
-            <stop offset="1" stop-color="#0066d6" />
+          <linearGradient id="kueri-db" x1="0" y1="0" x2="0.7" y2="1">
+            <stop offset="0" stop-color="#5cc0ff" />
+            <stop offset="1" stop-color="#0a84ff" />
+          </linearGradient>
+          <linearGradient id="kueri-lens" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#73c8ff" />
+            <stop offset="1" stop-color="#1488ff" />
           </linearGradient>
         </defs>
-        <rect x="4" y="4" width="40" height="40" rx="11" fill="url(#kueri-mark)" />
-        <ellipse cx="24" cy="16" rx="11" ry="4.2" fill="none" stroke="#fff" stroke-width="2.4" opacity="0.95" />
-        <path d="M13 16v16c0 2.3 4.9 4.2 11 4.2s11-1.9 11-4.2V16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity="0.95" />
-        <path d="M13 24c0 2.3 4.9 4.2 11 4.2s11-1.9 11-4.2" fill="none" stroke="#fff" stroke-width="2.4" opacity="0.6" />
+        <path d="M8 13 C8 9.5 38 9.5 38 13 L38 35 C38 38.5 8 38.5 8 35 Z" fill="url(#kueri-db)" />
+        <ellipse cx="23" cy="13" rx="15" ry="4.6" fill="#7fcdff" />
+        <path d="M8 21.5 C8 25 38 25 38 21.5" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.4" />
+        <path d="M8 28.5 C8 32 38 32 38 28.5" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.4" />
+        <line x1="49" y1="47" x2="57" y2="55" stroke="url(#kueri-db)" stroke-width="6" stroke-linecap="round" />
+        <line x1="49" y1="47" x2="57" y2="55" stroke="#0a84ff" stroke-width="2.4" stroke-linecap="round" />
+        <circle cx="42" cy="40" r="13" fill="url(#kueri-lens)" stroke="#eaf6ff" stroke-width="2.4" />
+        <g fill="#ffffff">
+          <rect x="36" y="40" width="3.2" height="3.2" rx="0.6" />
+          <rect x="41.5" y="36.5" width="4" height="4" rx="0.7" />
+          <rect x="45.5" y="41.5" width="3" height="3" rx="0.6" />
+          <rect x="39.5" y="44.5" width="2.4" height="2.4" rx="0.5" />
+          <circle cx="47.5" cy="38" r="1.1" />
+        </g>
       </svg>
     </div>
     <h1>Kueri</h1>
