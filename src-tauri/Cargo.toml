@@ -1,0 +1,43 @@
+[package]
+name = "kueri"
+version = "0.1.0"
+description = "A lightweight, native multi-database client"
+edition = "2021"
+
+[lib]
+name = "kueri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+# OS keychain for connection passwords (macOS Keychain / Windows Credential
+# Manager / Linux Secret Service). Backend features are platform-gated by the crate.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+sqlx = { version = "0.8", default-features = false, features = [
+  "runtime-tokio",
+  "tls-rustls",
+  "postgres",
+  "mysql",
+  "sqlite",
+  "uuid",
+  "chrono",
+  "json",
+  "bigdecimal",
+] }
+
+# --- Drivers not covered by sqlx ---
+# SQL Server: sqlx dropped MSSQL, so we use tiberius (see db/sqlserver.rs)
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+chrono = "0.4"
+# NoSQL (separate UI, see db/nosql.rs)
+# redis = { version = "0.27", features = ["tokio-comp"] }
+# mongodb = "3"

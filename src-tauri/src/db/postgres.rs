@@ -1,0 +1,177 @@
+use async_trait::async_trait;
+use serde_json::Value;
+use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
+use sqlx::{Column, Row, TypeInfo, ValueRef};
+
+use crate::db::connect::ConnectionConfig;
+use crate::db::ddl::Dialect;
+use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::error::AppResult;
+
+pub struct PgDriver {
+    pool: PgPool,
+}
+
+impl PgDriver {
+    pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&cfg.pg_url())
+            .await?;
+        sqlx::query("SELECT 1").execute(&pool).await?;
+        Ok(Self { pool })
+    }
+}
+
+#[async_trait]
+impl Driver for PgDriver {
+    fn dialect(&self) -> Dialect {
+        Dialect::Postgres
+    }
+
+    async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT schema_name FROM information_schema.schemata \
+             WHERE schema_name NOT IN ('pg_catalog','information_schema') \
+             AND schema_name NOT LIKE 'pg_%' ORDER BY schema_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(name,)| SchemaInfo { name }).collect())
+    }
+
+    async fn list_tables(&self, schema: &str) -> AppResult<Vec<TableInfo>> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT table_name, table_type FROM information_schema.tables \
+             WHERE table_schema = $1 ORDER BY table_name",
+        )
+        .bind(schema)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, kind)| TableInfo { name, kind })
+            .collect())
+    }
+
+    async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
+        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT column_name, data_type, is_nullable, column_default \
+             FROM information_schema.columns \
+             WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, data_type, is_nullable, default)| ColumnInfo {
+                name,
+                data_type,
+                nullable: is_nullable == "YES",
+                default,
+            })
+            .collect())
+    }
+
+    async fn list_primary_keys(&self, schema: &str, table: &str) -> AppResult<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT kcu.column_name \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON tc.constraint_name = kcu.constraint_name \
+              AND tc.table_schema = kcu.table_schema \
+             WHERE tc.constraint_type = 'PRIMARY KEY' \
+               AND tc.table_schema = $1 AND tc.table_name = $2 \
+             ORDER BY kcu.ordinal_position",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(name,)| name).collect())
+    }
+
+    async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
+        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
+        let columns = rows
+            .first()
+            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
+            .unwrap_or_default();
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let mut rec = Vec::with_capacity(row.columns().len());
+            for (i, col) in row.columns().iter().enumerate() {
+                rec.push(decode(row, i, col.type_info().name()));
+            }
+            out.push(rec);
+        }
+        let row_count = out.len();
+        Ok(QueryResult { columns, rows: out, row_count })
+    }
+
+    async fn close(&self) {
+        self.pool.close().await;
+    }
+}
+
+fn decode(row: &PgRow, idx: usize, type_name: &str) -> Value {
+    if let Ok(raw) = row.try_get_raw(idx) {
+        if raw.is_null() {
+            return Value::Null;
+        }
+    }
+    macro_rules! j {
+        ($($t:ty),*) => {{ $( if let Ok(v) = row.try_get::<$t,_>(idx) {
+            return serde_json::to_value(v).unwrap_or(Value::Null); } )* }};
+    }
+    match type_name {
+        "BOOL" => j!(bool),
+        "INT2" => j!(i16),
+        "INT4" => j!(i32),
+        // i64 exceeds JS's safe integer range — emit as a string so big IDs keep
+        // full precision (otherwise WHERE "id" = <rounded> matches no rows on edit).
+        "INT8" => {
+            if let Ok(v) = row.try_get::<i64, _>(idx) {
+                return Value::String(v.to_string());
+            }
+        }
+        "FLOAT4" => j!(f32),
+        "FLOAT8" => j!(f64),
+        "JSON" | "JSONB" => j!(serde_json::Value),
+        "TEXT" | "VARCHAR" | "BPCHAR" | "NAME" => j!(String),
+        "NUMERIC" => {
+            if let Ok(v) = row.try_get::<sqlx::types::BigDecimal, _>(idx) {
+                return Value::String(v.to_string());
+            }
+        }
+        "UUID" => {
+            if let Ok(v) = row.try_get::<sqlx::types::Uuid, _>(idx) {
+                return Value::String(v.to_string());
+            }
+        }
+        "TIMESTAMP" => {
+            if let Ok(v) = row.try_get::<sqlx::types::chrono::NaiveDateTime, _>(idx) {
+                return Value::String(v.to_string());
+            }
+        }
+        "TIMESTAMPTZ" => {
+            if let Ok(v) =
+                row.try_get::<sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>, _>(idx)
+            {
+                return Value::String(v.to_rfc3339());
+            }
+        }
+        "DATE" => {
+            if let Ok(v) = row.try_get::<sqlx::types::chrono::NaiveDate, _>(idx) {
+                return Value::String(v.to_string());
+            }
+        }
+        _ => {}
+    }
+    if let Ok(v) = row.try_get::<String, _>(idx) {
+        return Value::String(v);
+    }
+    Value::Null
+}
