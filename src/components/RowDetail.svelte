@@ -1,0 +1,232 @@
+<script lang="ts">
+  import { createEventDispatcher } from "svelte";
+  import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
+
+  export let result: QueryResult | null = null;
+  export let index: number | null = null;
+  export let columns: ColumnInfo[] = [];
+  export let editable = false;
+
+  const dispatch = createEventDispatcher<{ commit: RowEdit[]; close: void }>();
+
+  let edits: Record<string, string | null> = {};
+  let key = "";
+  let menu: { col: string; c: number; right: number; top: number; json: boolean } | null = null;
+
+  $: rowKey = `${result?.columns.length ?? 0}:${index}`;
+  $: if (rowKey !== key) {
+    key = rowKey;
+    edits = {};
+    menu = null;
+  }
+
+  $: row = result && index !== null ? result.rows[index] : null;
+  $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
+
+  const isBool = (t: string) => /bool/i.test(t);
+  const isJson = (t: string) => /json/i.test(t);
+  const isNull = (v: unknown) => v === null || v === undefined;
+
+  function fmt(v: unknown): string {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+  function prettyJson(s: string): string {
+    try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+  }
+  function minifyJson(s: string): string {
+    try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
+  }
+
+  /** Current displayed string for a column (staged edit wins; null → ""). */
+  const curStr = (col: string, c: number): string =>
+    col in edits ? (edits[col] ?? "") : fmt(row?.[c]);
+  /** Is this column currently NULL (staged or original)? */
+  const nulled = (col: string, c: number): boolean =>
+    col in edits ? edits[col] === null : isNull(row?.[c]);
+
+  /** Stage a value, or drop the edit if it matches the original. */
+  function setVal(col: string, orig: unknown, v: string | null) {
+    const origKey = isNull(orig) ? "\0NULL" : fmt(orig);
+    const newKey = v === null ? "\0NULL" : v;
+    if (newKey === origKey) delete edits[col];
+    else edits[col] = v;
+    edits = edits;
+  }
+
+  function jsonDisplay(col: string, c: number): string {
+    if (col in edits) return edits[col] ?? "";
+    return prettyJson(fmt(row?.[c]));
+  }
+
+  function openMenu(col: string, c: number, e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const json = isJson(typeMap.get(col) ?? "");
+    menu = { col, c, right: window.innerWidth - r.right, top: r.bottom + 4, json };
+  }
+
+  $: dirty = Object.keys(edits).length;
+
+  function save() {
+    if (!result || index === null || !dirty) return;
+    dispatch("commit", [{ rowIndex: index, original: result.rows[index], updates: { ...edits } }]);
+  }
+</script>
+
+<svelte:window on:keydown={(e) => { if (e.key === "Escape") menu = null; }} />
+
+<aside class="detail" aria-label="Row detail">
+  <header class="head">
+    <span class="title">{index !== null ? `Row ${index + 1}` : "Row"}</span>
+    <button class="close" on:click={() => dispatch("close")} title="Close" aria-label="Close">
+      <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  {#if result && row}
+    <div class="fields">
+      {#each result.columns as col, c (col)}
+        {@const type = typeMap.get(col) ?? ""}
+        <div class="rd-field">
+          <div class="fhead">
+            <span class="fname">{col}</span>
+            {#if type}<span class="ftype">{type}</span>{/if}
+          </div>
+
+          {#if editable}
+            <div class="rd-control" class:edited={col in edits} class:nulled={nulled(col, c)}>
+              {#if isBool(type)}
+                <select
+                  class="rd-input rd-select"
+                  aria-label={col}
+                  on:change={(e) => setVal(col, row[c], e.currentTarget.value === "__rd_null__" ? null : e.currentTarget.value)}
+                >
+                  <option value="true" selected={curStr(col, c) === "true" && !nulled(col, c)}>true</option>
+                  <option value="false" selected={curStr(col, c) === "false" && !nulled(col, c)}>false</option>
+                  <option value="__rd_null__" selected={nulled(col, c)}>NULL</option>
+                </select>
+              {:else if isJson(type)}
+                <textarea
+                  class="rd-input rd-textarea"
+                  class:nullph={nulled(col, c)}
+                  aria-label={col}
+                  rows="6"
+                  spellcheck="false"
+                  placeholder={nulled(col, c) ? "NULL" : ""}
+                  value={nulled(col, c) ? "" : jsonDisplay(col, c)}
+                  on:input={(e) => setVal(col, row[c], e.currentTarget.value)}
+                ></textarea>
+                <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(e) => openMenu(col, c, e)}>⋯</button>
+              {:else}
+                <input
+                  class="rd-input"
+                  class:nullph={nulled(col, c)}
+                  aria-label={col}
+                  spellcheck="false"
+                  placeholder={nulled(col, c) ? "NULL" : ""}
+                  value={nulled(col, c) ? "" : curStr(col, c)}
+                  on:input={(e) => setVal(col, row[c], e.currentTarget.value)}
+                />
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(e) => openMenu(col, c, e)}>⋯</button>
+              {/if}
+            </div>
+          {:else}
+            <div class="fval ro" class:nullv={isNull(row[c])}>{isNull(row[c]) ? "NULL" : isJson(type) ? prettyJson(fmt(row[c])) : fmt(row[c])}</div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+
+    {#if editable}
+      <footer class="foot">
+        <span class="dirty">{dirty ? `${dirty} changed` : "No changes"}</span>
+        <button class="save-btn" on:click={save} disabled={!dirty}>Save</button>
+      </footer>
+    {/if}
+  {:else}
+    <div class="empty">Select a row to see its values.</div>
+  {/if}
+</aside>
+
+{#if menu}
+  {@const m = menu}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="menu-backdrop" on:click={() => (menu = null)}></div>
+  <div class="rd-menu" style="right: {m.right}px; top: {m.top}px;">
+    <button on:click={() => { setVal(m.col, row?.[m.c], null); menu = null; }}>Set NULL</button>
+    <button on:click={() => { setVal(m.col, row?.[m.c], ""); menu = null; }}>Set empty</button>
+    {#if m.json}
+      <div class="sep"></div>
+      <button on:click={() => { setVal(m.col, row?.[m.c], prettyJson(curStr(m.col, m.c))); menu = null; }}>Pretty</button>
+      <button on:click={() => { setVal(m.col, row?.[m.c], minifyJson(curStr(m.col, m.c))); menu = null; }}>Minify</button>
+    {/if}
+  </div>
+{/if}
+
+<style>
+  .detail { display: flex; flex-direction: column; background: var(--bg-panel); border-left: 1px solid var(--border); min-width: 0; flex: 1; overflow: hidden; }
+
+  .head { display: flex; align-items: center; justify-content: space-between; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hairline); flex: none; }
+  .title { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .close { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--muted); }
+  .close:hover { background: var(--bg-elevated); color: var(--ink); }
+
+  .fields { flex: 1; overflow-y: auto; padding: var(--s-3) var(--s-4); }
+
+  .rd-field { margin-bottom: var(--s-5); }
+  .fhead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-2); }
+  .fname { font-size: 11.5px; font-weight: 600; color: var(--muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ftype { font-size: 10px; color: var(--faint); font-family: var(--font-mono); flex: none; }
+
+  .fval { display: block; font-size: 12.5px; color: var(--ink); font-family: var(--font-mono); word-break: break-word; }
+  .fval.ro { user-select: text; white-space: pre-wrap; min-height: 18px; padding: var(--s-1) 0; }
+  .nullv { color: var(--faint); font-style: italic; }
+
+  /* ── Editable controls ─────────────────────────────────────── */
+  .rd-control { position: relative; }
+  .rd-input {
+    appearance: none; -webkit-appearance: none;
+    width: 100%; margin: 0; box-sizing: border-box;
+    background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm);
+    color: var(--ink); font-family: var(--font-mono); font-size: 12.5px;
+    transition: border-color var(--t-fast) var(--ease-out);
+  }
+  .rd-input:focus { outline: none; border-color: var(--accent); }
+  input.rd-input { height: 30px; padding: 0 26px 0 var(--s-3); }
+  .rd-select { height: 30px; padding: 0 var(--s-3); cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239494a0' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right var(--s-3) center; padding-right: var(--s-7); }
+  .rd-textarea { padding: var(--s-2) var(--s-3); min-height: 64px; line-height: 1.5; resize: vertical; white-space: pre; }
+  .nullph::placeholder { color: var(--faint); font-style: italic; }
+
+  .rd-control.edited .rd-input { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-content)); }
+
+  .rd-menu-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 22px; border-radius: var(--r-xs); display: grid; place-items: center;
+    color: var(--faint); font-size: 13px; line-height: 1;
+  }
+  .rd-menu-btn.top { top: 5px; transform: none; }
+  .rd-menu-btn:hover { color: var(--ink); background: var(--bg-elevated); }
+
+  /* ── Quick-value menu (fixed so it escapes the panel's overflow) ── */
+  .menu-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
+  .rd-menu {
+    position: fixed; z-index: var(--z-dropdown); min-width: 140px;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: var(--r-md); box-shadow: var(--shadow-pop); padding: var(--s-1);
+    display: flex; flex-direction: column;
+  }
+  .rd-menu button { text-align: left; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12.5px; color: var(--ink-soft); }
+  .rd-menu button:hover { background: var(--accent); color: var(--accent-ink); }
+  .rd-menu .sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--hairline); }
+
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--hairline); flex: none; }
+  .dirty { font-size: 11px; color: var(--faint); }
+  .save-btn { height: 28px; padding: 0 var(--s-5); border-radius: var(--r-sm); font: inherit; font-size: 12px; font-weight: 600; border: 1px solid transparent; background: var(--accent); color: var(--accent-ink); }
+  .save-btn:hover:not(:disabled) { filter: brightness(1.05); }
+  .save-btn:disabled { opacity: 0.5; }
+
+  .empty { flex: 1; display: grid; place-items: center; color: var(--faint); font-size: 12px; padding: var(--s-5); text-align: center; }
+</style>
