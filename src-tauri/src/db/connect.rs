@@ -52,7 +52,10 @@ impl ConnectionConfig {
     }
 
     pub fn sqlite_url(&self) -> String {
-        let path = self.file_path.clone().unwrap_or_else(|| self.database.clone());
+        let path = self
+            .file_path
+            .clone()
+            .unwrap_or_else(|| self.database.clone());
         format!("sqlite://{}", path)
     }
 }

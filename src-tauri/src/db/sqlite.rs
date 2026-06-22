@@ -30,7 +30,9 @@ impl Driver for SqliteDriver {
 
     async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>> {
         // SQLite has no schemas; expose a single logical one.
-        Ok(vec![SchemaInfo { name: "main".into() }])
+        Ok(vec![SchemaInfo {
+            name: "main".into(),
+        }])
     }
 
     async fn list_tables(&self, _schema: &str) -> AppResult<Vec<TableInfo>> {
@@ -98,7 +100,11 @@ impl Driver for SqliteDriver {
             out.push(rec);
         }
         let row_count = out.len();
-        Ok(QueryResult { columns, rows: out, row_count })
+        Ok(QueryResult {
+            columns,
+            rows: out,
+            row_count,
+        })
     }
 
     async fn close(&self) {

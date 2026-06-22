@@ -54,57 +54,98 @@ pub trait Driver: Send + Sync {
     fn dialect(&self) -> Dialect;
 
     async fn create_table(&self, schema: &str, name: &str, columns: &[ColumnDef]) -> AppResult<()> {
-        self.run_query(&ddl::create_table(self.dialect(), schema, name, columns)).await?;
+        self.run_query(&ddl::create_table(self.dialect(), schema, name, columns))
+            .await?;
         Ok(())
     }
     async fn drop_table(&self, schema: &str, table: &str) -> AppResult<()> {
-        self.run_query(&ddl::drop_table(self.dialect(), schema, table)).await?;
+        self.run_query(&ddl::drop_table(self.dialect(), schema, table))
+            .await?;
         Ok(())
     }
     async fn rename_table(&self, schema: &str, old: &str, new: &str) -> AppResult<()> {
-        self.run_query(&ddl::rename_table(self.dialect(), schema, old, new)).await?;
+        self.run_query(&ddl::rename_table(self.dialect(), schema, old, new))
+            .await?;
         Ok(())
     }
     async fn truncate_table(&self, schema: &str, table: &str) -> AppResult<()> {
-        self.run_query(&ddl::truncate_table(self.dialect(), schema, table)).await?;
+        self.run_query(&ddl::truncate_table(self.dialect(), schema, table))
+            .await?;
         Ok(())
     }
     async fn duplicate_table(&self, schema: &str, src: &str, dst: &str) -> AppResult<()> {
-        self.run_query(&ddl::duplicate_table(self.dialect(), schema, src, dst)).await?;
+        self.run_query(&ddl::duplicate_table(self.dialect(), schema, src, dst))
+            .await?;
         Ok(())
     }
     async fn add_column(&self, schema: &str, table: &str, column: &ColumnDef) -> AppResult<()> {
-        self.run_query(&ddl::add_column(self.dialect(), schema, table, column)).await?;
+        self.run_query(&ddl::add_column(self.dialect(), schema, table, column))
+            .await?;
         Ok(())
     }
     async fn drop_column(&self, schema: &str, table: &str, column: &str) -> AppResult<()> {
-        self.run_query(&ddl::drop_column(self.dialect(), schema, table, column)).await?;
+        self.run_query(&ddl::drop_column(self.dialect(), schema, table, column))
+            .await?;
         Ok(())
     }
-    async fn rename_column(&self, schema: &str, table: &str, old: &str, new: &str) -> AppResult<()> {
-        self.run_query(&ddl::rename_column(self.dialect(), schema, table, old, new)).await?;
+    async fn rename_column(
+        &self,
+        schema: &str,
+        table: &str,
+        old: &str,
+        new: &str,
+    ) -> AppResult<()> {
+        self.run_query(&ddl::rename_column(self.dialect(), schema, table, old, new))
+            .await?;
         Ok(())
     }
     async fn change_column_type(
-        &self, schema: &str, table: &str, column: &str, new_type: &str, not_null: bool,
+        &self,
+        schema: &str,
+        table: &str,
+        column: &str,
+        new_type: &str,
+        not_null: bool,
     ) -> AppResult<()> {
         if self.dialect() == Dialect::Sqlite {
             return Err(AppError::Other(
                 "SQLite can't change a column type in place (requires a table rebuild).".into(),
             ));
         }
-        self.run_query(&ddl::change_column_type(self.dialect(), schema, table, column, new_type, not_null)).await?;
+        self.run_query(&ddl::change_column_type(
+            self.dialect(),
+            schema,
+            table,
+            column,
+            new_type,
+            not_null,
+        ))
+        .await?;
         Ok(())
     }
     async fn set_column_nullable(
-        &self, schema: &str, table: &str, column: &str, current_type: &str, not_null: bool,
+        &self,
+        schema: &str,
+        table: &str,
+        column: &str,
+        current_type: &str,
+        not_null: bool,
     ) -> AppResult<()> {
         if self.dialect() == Dialect::Sqlite {
             return Err(AppError::Other(
-                "SQLite can't change a column's nullability in place (requires a table rebuild).".into(),
+                "SQLite can't change a column's nullability in place (requires a table rebuild)."
+                    .into(),
             ));
         }
-        self.run_query(&ddl::set_column_nullable(self.dialect(), schema, table, column, current_type, not_null)).await?;
+        self.run_query(&ddl::set_column_nullable(
+            self.dialect(),
+            schema,
+            table,
+            column,
+            current_type,
+            not_null,
+        ))
+        .await?;
         Ok(())
     }
 }

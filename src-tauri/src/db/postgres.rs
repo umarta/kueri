@@ -37,7 +37,10 @@ impl Driver for PgDriver {
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(|(name,)| SchemaInfo { name }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|(name,)| SchemaInfo { name })
+            .collect())
     }
 
     async fn list_tables(&self, schema: &str) -> AppResult<Vec<TableInfo>> {
@@ -108,7 +111,11 @@ impl Driver for PgDriver {
             out.push(rec);
         }
         let row_count = out.len();
-        Ok(QueryResult { columns, rows: out, row_count })
+        Ok(QueryResult {
+            columns,
+            rows: out,
+            row_count,
+        })
     }
 
     async fn close(&self) {

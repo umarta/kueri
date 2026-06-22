@@ -107,7 +107,12 @@ impl Driver for SqlServerDriver {
         Ok(rows
             .iter()
             .map(|r| TableInfo {
-                name: r.try_get::<&str, _>(0).ok().flatten().unwrap_or("").to_string(),
+                name: r
+                    .try_get::<&str, _>(0)
+                    .ok()
+                    .flatten()
+                    .unwrap_or("")
+                    .to_string(),
                 kind: r
                     .try_get::<&str, _>(1)
                     .ok()
@@ -135,8 +140,18 @@ impl Driver for SqlServerDriver {
         Ok(rows
             .iter()
             .map(|r| ColumnInfo {
-                name: r.try_get::<&str, _>(0).ok().flatten().unwrap_or("").to_string(),
-                data_type: r.try_get::<&str, _>(1).ok().flatten().unwrap_or("").to_string(),
+                name: r
+                    .try_get::<&str, _>(0)
+                    .ok()
+                    .flatten()
+                    .unwrap_or("")
+                    .to_string(),
+                data_type: r
+                    .try_get::<&str, _>(1)
+                    .ok()
+                    .flatten()
+                    .unwrap_or("")
+                    .to_string(),
                 nullable: r.try_get::<&str, _>(2).ok().flatten() == Some("YES"),
                 default: r.try_get::<&str, _>(3).ok().flatten().map(str::to_string),
             })
@@ -184,7 +199,11 @@ impl Driver for SqlServerDriver {
             out.push(rec);
         }
         let row_count = out.len();
-        Ok(QueryResult { columns, rows: out, row_count })
+        Ok(QueryResult {
+            columns,
+            rows: out,
+            row_count,
+        })
     }
 
     async fn close(&self) {

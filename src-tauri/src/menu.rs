@@ -6,7 +6,12 @@
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{App, Emitter};
 
-fn item(app: &App, id: &str, label: &str, accel: Option<&str>) -> tauri::Result<tauri::menu::MenuItem<tauri::Wry>> {
+fn item(
+    app: &App,
+    id: &str,
+    label: &str,
+    accel: Option<&str>,
+) -> tauri::Result<tauri::menu::MenuItem<tauri::Wry>> {
     let mut b = MenuItemBuilder::with_id(id, label);
     if let Some(a) = accel {
         b = b.accelerator(a);
@@ -18,7 +23,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
     let app_menu = SubmenuBuilder::new(app, "Kueri")
         .about(None)
         .separator()
-        .item(&item(app, "settings", "Settings…", Some("CmdOrCtrl+Comma"))?)
+        .item(&item(
+            app,
+            "settings",
+            "Settings…",
+            Some("CmdOrCtrl+Comma"),
+        )?)
         .separator()
         .services()
         .separator()
@@ -30,8 +40,18 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .build()?;
 
     let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&item(app, "new_query_tab", "New Query Tab", Some("CmdOrCtrl+T"))?)
-        .item(&item(app, "new_sql", "New SQL Editor", Some("CmdOrCtrl+E"))?)
+        .item(&item(
+            app,
+            "new_query_tab",
+            "New Query Tab",
+            Some("CmdOrCtrl+T"),
+        )?)
+        .item(&item(
+            app,
+            "new_sql",
+            "New SQL Editor",
+            Some("CmdOrCtrl+E"),
+        )?)
         .item(&item(app, "new_table", "New Table…", None)?)
         .separator()
         .item(&item(app, "close_tab", "Close Tab", Some("CmdOrCtrl+W"))?)
@@ -58,14 +78,34 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .item(&item(app, "toggle_detail", "Toggle Row Detail", None)?)
         .item(&item(app, "toggle_log", "Toggle Query Log", None)?)
         .separator()
-        .item(&item(app, "open_palette", "Open Anything…", Some("CmdOrCtrl+P"))?)
+        .item(&item(
+            app,
+            "open_palette",
+            "Open Anything…",
+            Some("CmdOrCtrl+P"),
+        )?)
         .separator()
-        .item(&item(app, "force_reload", "Force Reload", Some("CmdOrCtrl+Shift+R"))?)
+        .item(&item(
+            app,
+            "force_reload",
+            "Force Reload",
+            Some("CmdOrCtrl+Shift+R"),
+        )?)
         .build()?;
 
     let conn_menu = SubmenuBuilder::new(app, "Connection")
-        .item(&item(app, "new_connection", "New Connection…", Some("CmdOrCtrl+N"))?)
-        .item(&item(app, "switch_schema", "Switch Schema", Some("CmdOrCtrl+K"))?)
+        .item(&item(
+            app,
+            "new_connection",
+            "New Connection…",
+            Some("CmdOrCtrl+N"),
+        )?)
+        .item(&item(
+            app,
+            "switch_schema",
+            "Switch Schema",
+            Some("CmdOrCtrl+K"),
+        )?)
         .separator()
         .item(&item(app, "run_query", "Run Query", None)?)
         .separator()
@@ -74,15 +114,32 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Window")
-        .item(&item(app, "prev_tab", "Previous Tab", Some("CmdOrCtrl+BracketLeft"))?)
-        .item(&item(app, "next_tab", "Next Tab", Some("CmdOrCtrl+BracketRight"))?)
+        .item(&item(
+            app,
+            "prev_tab",
+            "Previous Tab",
+            Some("CmdOrCtrl+BracketLeft"),
+        )?)
+        .item(&item(
+            app,
+            "next_tab",
+            "Next Tab",
+            Some("CmdOrCtrl+BracketRight"),
+        )?)
         .separator()
         .minimize()
         .maximize()
         .build()?;
 
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &conn_menu, &window_menu])
+        .items(&[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &conn_menu,
+            &window_menu,
+        ])
         .build()?;
 
     app.set_menu(menu)?;

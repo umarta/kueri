@@ -77,7 +77,12 @@ pub async fn create_table(
 }
 
 #[tauri::command]
-pub async fn drop_table(state: State<'_, AppState>, id: String, schema: String, table: String) -> AppResult<()> {
+pub async fn drop_table(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<()> {
     state.get(&id)?.drop_table(&schema, &table).await
 }
 
@@ -93,7 +98,12 @@ pub async fn rename_table(
 }
 
 #[tauri::command]
-pub async fn truncate_table(state: State<'_, AppState>, id: String, schema: String, table: String) -> AppResult<()> {
+pub async fn truncate_table(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<()> {
     state.get(&id)?.truncate_table(&schema, &table).await
 }
 
@@ -139,7 +149,10 @@ pub async fn rename_column(
     old: String,
     new: String,
 ) -> AppResult<()> {
-    state.get(&id)?.rename_column(&schema, &table, &old, &new).await
+    state
+        .get(&id)?
+        .rename_column(&schema, &table, &old, &new)
+        .await
 }
 
 #[tauri::command]
@@ -152,7 +165,10 @@ pub async fn change_column_type(
     new_type: String,
     not_null: bool,
 ) -> AppResult<()> {
-    state.get(&id)?.change_column_type(&schema, &table, &column, &new_type, not_null).await
+    state
+        .get(&id)?
+        .change_column_type(&schema, &table, &column, &new_type, not_null)
+        .await
 }
 
 #[tauri::command]
@@ -165,5 +181,8 @@ pub async fn set_column_nullable(
     current_type: String,
     not_null: bool,
 ) -> AppResult<()> {
-    state.get(&id)?.set_column_nullable(&schema, &table, &column, &current_type, not_null).await
+    state
+        .get(&id)?
+        .set_column_nullable(&schema, &table, &column, &current_type, not_null)
+        .await
 }

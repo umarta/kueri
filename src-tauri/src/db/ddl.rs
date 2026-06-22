@@ -58,7 +58,11 @@ pub fn create_table(d: Dialect, schema: &str, table: &str, cols: &[ColumnDef]) -
                 "{} {}{}{}",
                 ident(d, c.name.trim()),
                 c.data_type.trim(),
-                if def.is_empty() { String::new() } else { format!(" DEFAULT {def}") },
+                if def.is_empty() {
+                    String::new()
+                } else {
+                    format!(" DEFAULT {def}")
+                },
                 if c.nullable { "" } else { " NOT NULL" }
             )
         })
@@ -71,7 +75,11 @@ pub fn create_table(d: Dialect, schema: &str, table: &str, cols: &[ColumnDef]) -
     if !pks.is_empty() {
         defs.push(format!("PRIMARY KEY ({})", pks.join(", ")));
     }
-    format!("CREATE TABLE {} (\n  {}\n);", qualify(d, schema, table), defs.join(",\n  "))
+    format!(
+        "CREATE TABLE {} (\n  {}\n);",
+        qualify(d, schema, table),
+        defs.join(",\n  ")
+    )
 }
 
 pub fn drop_table(d: Dialect, schema: &str, table: &str) -> String {
@@ -123,7 +131,11 @@ pub fn add_column(d: Dialect, schema: &str, table: &str, col: &ColumnDef) -> Str
         qualify(d, schema, table),
         ident(d, col.name.trim()),
         col.data_type.trim(),
-        if def.is_empty() { String::new() } else { format!(" DEFAULT {def}") },
+        if def.is_empty() {
+            String::new()
+        } else {
+            format!(" DEFAULT {def}")
+        },
         if col.nullable { "" } else { " NOT NULL" }
     )
 }
@@ -155,7 +167,12 @@ pub fn rename_column(d: Dialect, schema: &str, table: &str, old: &str, new: &str
 }
 
 pub fn change_column_type(
-    d: Dialect, schema: &str, table: &str, column: &str, new_type: &str, not_null: bool,
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    column: &str,
+    new_type: &str,
+    not_null: bool,
 ) -> String {
     let q = qualify(d, schema, table);
     let c = ident(d, column);
@@ -173,7 +190,12 @@ pub fn change_column_type(
 }
 
 pub fn set_column_nullable(
-    d: Dialect, schema: &str, table: &str, column: &str, current_type: &str, not_null: bool,
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    column: &str,
+    current_type: &str,
+    not_null: bool,
 ) -> String {
     let q = qualify(d, schema, table);
     let c = ident(d, column);
