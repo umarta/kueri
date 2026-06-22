@@ -8,19 +8,20 @@ export interface ColumnDraft {
   type: string; // a dialect SQL type from typeOptions()
   nullable: boolean;
   primaryKey: boolean;
+  default: string; // optional column default expression (empty = none)
 }
 
 /** Column type choices for the designer dropdown, per dialect. */
 export function typeOptions(kind: DbKind): string[] {
   switch (kind) {
     case "mysql":
-      return ["INT", "BIGINT", "VARCHAR(255)", "TEXT", "BOOLEAN", "DATETIME", "DATE", "DECIMAL(10,2)", "DOUBLE", "JSON"];
+      return ["INT", "BIGINT", "VARCHAR(255)", "TEXT", "BOOLEAN", "DATETIME", "TIMESTAMP", "DATE", "TIME", "DECIMAL(10,2)", "DOUBLE", "FLOAT", "JSON", "BLOB"];
     case "sqlite":
       return ["INTEGER", "TEXT", "REAL", "NUMERIC", "BLOB"];
     case "sqlserver":
-      return ["INT", "BIGINT", "NVARCHAR(255)", "NVARCHAR(MAX)", "BIT", "DATETIME2", "DATE", "DECIMAL(10,2)", "FLOAT", "UNIQUEIDENTIFIER"];
+      return ["INT", "BIGINT", "NVARCHAR(255)", "NVARCHAR(MAX)", "BIT", "DATETIME2", "DATE", "TIME", "DECIMAL(10,2)", "FLOAT", "UNIQUEIDENTIFIER"];
     default: // postgres
-      return ["serial", "bigserial", "integer", "bigint", "text", "varchar(255)", "boolean", "timestamptz", "date", "numeric", "double precision", "uuid", "jsonb"];
+      return ["serial", "bigserial", "int2", "int4", "int8", "float4", "float8", "numeric", "bool", "text", "varchar(255)", "char", "bytea", "date", "time", "timetz", "timestamp", "timestamptz", "interval", "uuid", "json", "jsonb", "xml"];
   }
 }
 
@@ -28,7 +29,7 @@ export function typeOptions(kind: DbKind): string[] {
 export function defaultIdColumn(kind: DbKind): ColumnDraft {
   const type =
     kind === "mysql" ? "INT" : kind === "sqlite" ? "INTEGER" : kind === "sqlserver" ? "INT" : "serial";
-  return { name: "id", type, nullable: false, primaryKey: true };
+  return { name: "id", type, nullable: false, primaryKey: true, default: "" };
 }
 
 /** Type choices for editing an EXISTING column (drops create-only pseudo-types). */

@@ -123,7 +123,7 @@
   }
   function addCol() {
     const opts = typeOptions(kind);
-    cols = [...cols, { name: "", type: opts[2] ?? opts[0], nullable: true, primaryKey: false }];
+    cols = [...cols, { name: "", type: opts[2] ?? opts[0], nullable: true, primaryKey: false, default: "" }];
   }
   function removeCol(i: number) {
     cols = cols.filter((_, idx) => idx !== i);
@@ -312,8 +312,8 @@
 
 <!-- New table: column designer -->
 {#if showAdd}
-  <Modal title="New table" width="560px" on:close={() => (showAdd = false)}>
-    <label class="field">
+  <Modal title="New table" width="620px" on:close={() => (showAdd = false)}>
+    <label class="sb-field">
       <span class="flabel">Name</span>
       <input class="finput" bind:value={newName} placeholder="e.g. customers" spellcheck="false" />
     </label>
@@ -322,6 +322,7 @@
       <div class="cols-head">
         <span class="ch ch-name">Column</span>
         <span class="ch ch-type">Type</span>
+        <span class="ch ch-def">Default</span>
         <span class="ch ch-flag">Null</span>
         <span class="ch ch-flag">PK</span>
         <span class="ch ch-x"></span>
@@ -332,6 +333,7 @@
           <select class="ci ci-type" bind:value={c.type}>
             {#each typeOptions(kind) as opt (opt)}<option value={opt}>{opt}</option>{/each}
           </select>
+          <input class="ci ci-def" bind:value={c.default} placeholder="—" spellcheck="false" />
           <label class="ci ci-flag"><input type="checkbox" bind:checked={c.nullable} /></label>
           <label class="ci ci-flag"><input type="checkbox" bind:checked={c.primaryKey} /></label>
           <button class="ci ci-x" title="Remove column" on:click={() => removeCol(i)} disabled={cols.length <= 1}>
@@ -358,7 +360,7 @@
 <!-- Rename -->
 {#if showRename}
   <Modal title="Rename table" width="380px" on:close={() => (showRename = false)}>
-    <label class="field">
+    <label class="sb-field">
       <span class="flabel">New name</span>
       <input class="finput" bind:value={renameValue} spellcheck="false"
         on:keydown={(e) => { if (e.key === "Enter") doRename(); }} />
@@ -392,7 +394,7 @@
 <!-- Duplicate -->
 {#if showDup}
   <Modal title="Duplicate table" width="380px" on:close={() => (showDup = false)}>
-    <label class="field">
+    <label class="sb-field">
       <span class="flabel">New table name</span>
       <input class="finput" bind:value={dupValue} spellcheck="false"
         on:keydown={(e) => { if (e.key === "Enter") doDuplicate(); }} />
@@ -496,7 +498,7 @@
   @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
   /* Modal fields */
-  .field { display: flex; flex-direction: column; gap: var(--s-2); }
+  .sb-field { display: flex; flex-direction: column; gap: var(--s-2); }
   .flabel { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .finput {
     height: 32px; padding: 0 var(--s-3);
@@ -510,18 +512,19 @@
 
   /* Column designer */
   .cols { margin-top: var(--s-5); }
-  .cols-head, .crow { display: grid; grid-template-columns: 1fr 1.2fr 44px 38px 26px; gap: var(--s-2); align-items: center; }
+  .cols-head, .crow { display: grid; grid-template-columns: 1fr 1.1fr 0.9fr 44px 38px 26px; gap: var(--s-2); align-items: center; }
   .cols-head { padding: 0 0 var(--s-2); }
   .ch { font-size: 10.5px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; }
   .ch-flag { text-align: center; }
   .crow { margin-bottom: var(--s-2); }
-  .ci-name, .ci-type {
+  .ci-name, .ci-type, .ci-def {
     height: 30px; padding: 0 var(--s-3);
     background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm);
     color: var(--ink); font: inherit; font-size: 12.5px;
   }
+  .ci-def { font-family: var(--font-mono, ui-monospace, monospace); }
   .ci-type { appearance: none; -webkit-appearance: none; cursor: pointer; }
-  .ci-name:focus, .ci-type:focus { outline: none; border-color: var(--accent); }
+  .ci-name:focus, .ci-type:focus, .ci-def:focus { outline: none; border-color: var(--accent); }
   .ci-flag { display: grid; place-items: center; height: 30px; }
   .ci-flag input { width: 15px; height: 15px; accent-color: var(--accent); }
   .ci-x { display: grid; place-items: center; height: 30px; color: var(--faint); border-radius: var(--r-xs); }

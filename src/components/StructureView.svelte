@@ -17,7 +17,7 @@
 
   // Add-column inline form
   let adding = false;
-  let draft: ColumnDraft = { name: "", type: "", nullable: true, primaryKey: false };
+  let draft: ColumnDraft = { name: "", type: "", nullable: true, primaryKey: false, default: "" };
 
   // Inline rename
   let renaming: string | null = null;
@@ -55,7 +55,7 @@
   function startAdd() {
     error = "";
     const opts = typeOptions(kind);
-    draft = { name: "", type: opts[2] ?? opts[0], nullable: true, primaryKey: false };
+    draft = { name: "", type: opts[2] ?? opts[0], nullable: true, primaryKey: false, default: "" };
     adding = true;
   }
 

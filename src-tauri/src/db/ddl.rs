@@ -22,6 +22,9 @@ pub struct ColumnDef {
     pub nullable: bool,
     #[serde(default)]
     pub primary_key: bool,
+    /// Optional default expression (empty = none). Used verbatim, e.g. `now()`, `0`, `'x'`.
+    #[serde(default)]
+    pub default: String,
 }
 
 fn dq(v: &str) -> String {
@@ -50,10 +53,12 @@ pub fn create_table(d: Dialect, schema: &str, table: &str, cols: &[ColumnDef]) -
         .iter()
         .filter(|c| !c.name.trim().is_empty() && !c.data_type.trim().is_empty())
         .map(|c| {
+            let def = c.default.trim();
             format!(
-                "{} {}{}",
+                "{} {}{}{}",
                 ident(d, c.name.trim()),
                 c.data_type.trim(),
+                if def.is_empty() { String::new() } else { format!(" DEFAULT {def}") },
                 if c.nullable { "" } else { " NOT NULL" }
             )
         })
@@ -112,11 +117,13 @@ pub fn duplicate_table(d: Dialect, schema: &str, src: &str, dst: &str) -> String
 }
 
 pub fn add_column(d: Dialect, schema: &str, table: &str, col: &ColumnDef) -> String {
+    let def = col.default.trim();
     format!(
-        "ALTER TABLE {} ADD COLUMN {} {}{};",
+        "ALTER TABLE {} ADD COLUMN {} {}{}{};",
         qualify(d, schema, table),
         ident(d, col.name.trim()),
         col.data_type.trim(),
+        if def.is_empty() { String::new() } else { format!(" DEFAULT {def}") },
         if col.nullable { "" } else { " NOT NULL" }
     )
 }
