@@ -1,0 +1,55 @@
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  ConnectionConfig,
+  SchemaInfo,
+  TableInfo,
+  ColumnInfo,
+  QueryResult,
+} from "./types";
+import type { ColumnDraft } from "./ddl";
+
+// One typed surface over all Rust commands. Add new commands here.
+export const api = {
+  connect: (config: ConnectionConfig) => invoke<string>("connect", { config }),
+  disconnect: (id: string) => invoke<void>("disconnect", { id }),
+  listSchemas: (id: string) => invoke<SchemaInfo[]>("list_schemas", { id }),
+  listTables: (id: string, schema: string) =>
+    invoke<TableInfo[]>("list_tables", { id, schema }),
+  listColumns: (id: string, schema: string, table: string) =>
+    invoke<ColumnInfo[]>("list_columns", { id, schema, table }),
+  primaryKeys: (id: string, schema: string, table: string) =>
+    invoke<string[]>("primary_keys", { id, schema, table }),
+  executeQuery: (id: string, sql: string) =>
+    invoke<QueryResult>("execute_query", { id, sql }),
+
+  // DDL — database-agnostic; the Rust driver renders the right SQL per dialect.
+  createTable: (id: string, schema: string, name: string, columns: ColumnDraft[]) =>
+    invoke<void>("create_table", { id, schema, name, columns }),
+  dropTable: (id: string, schema: string, table: string) =>
+    invoke<void>("drop_table", { id, schema, table }),
+  renameTable: (id: string, schema: string, oldName: string, newName: string) =>
+    invoke<void>("rename_table", { id, schema, old: oldName, new: newName }),
+  truncateTable: (id: string, schema: string, table: string) =>
+    invoke<void>("truncate_table", { id, schema, table }),
+  duplicateTable: (id: string, schema: string, src: string, dst: string) =>
+    invoke<void>("duplicate_table", { id, schema, src, dst }),
+  addColumn: (id: string, schema: string, table: string, column: ColumnDraft) =>
+    invoke<void>("add_column", { id, schema, table, column }),
+  dropColumn: (id: string, schema: string, table: string, column: string) =>
+    invoke<void>("drop_column", { id, schema, table, column }),
+  renameColumn: (id: string, schema: string, table: string, oldName: string, newName: string) =>
+    invoke<void>("rename_column", { id, schema, table, old: oldName, new: newName }),
+  changeColumnType: (id: string, schema: string, table: string, column: string, newType: string, notNull: boolean) =>
+    invoke<void>("change_column_type", { id, schema, table, column, newType, notNull }),
+  setColumnNullable: (id: string, schema: string, table: string, column: string, currentType: string, notNull: boolean) =>
+    invoke<void>("set_column_nullable", { id, schema, table, column, currentType, notNull }),
+
+  // Persistence (connections file) + OS keychain (passwords).
+  loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),
+  saveConnections: (connections: Omit<ConnectionConfig, "password">[]) =>
+    invoke<void>("save_connections", { connections }),
+  secretSet: (id: string, password: string) =>
+    invoke<void>("secret_set", { id, password }),
+  secretGet: (id: string) => invoke<string | null>("secret_get", { id }),
+  secretDelete: (id: string) => invoke<void>("secret_delete", { id }),
+};
