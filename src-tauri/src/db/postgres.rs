@@ -60,8 +60,8 @@ impl Driver for PgDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT column_name, data_type, is_nullable, column_default \
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT column_name, data_type, is_nullable, column_default, udt_name \
              FROM information_schema.columns \
              WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
         )
@@ -69,13 +69,37 @@ impl Driver for PgDriver {
         .bind(table)
         .fetch_all(&self.pool)
         .await?;
+        // Enum types → their labels (in sort order), keyed by type name.
+        let enum_rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT t.typname, e.enumlabel FROM pg_type t \
+             JOIN pg_enum e ON e.enumtypid = t.oid ORDER BY e.enumsortorder",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+        let mut enums: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for (t, l) in enum_rows {
+            enums.entry(t).or_default().push(l);
+        }
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default)| ColumnInfo {
-                name,
-                data_type,
-                nullable: is_nullable == "YES",
-                default,
+            .map(|(name, data_type, is_nullable, default, udt_name)| {
+                // For enums, information_schema reports "USER-DEFINED"; show the type
+                // name instead and attach its values.
+                let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
+                let data_type = if data_type == "USER-DEFINED" {
+                    udt_name
+                } else {
+                    data_type
+                };
+                ColumnInfo {
+                    name,
+                    data_type,
+                    nullable: is_nullable == "YES",
+                    default,
+                    enum_values,
+                }
             })
             .collect())
     }

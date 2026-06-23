@@ -64,8 +64,9 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), CAST(column_default AS CHAR) \
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), \
+                    CAST(column_default AS CHAR), CAST(column_type AS CHAR) \
              FROM information_schema.columns \
              WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position",
         )
@@ -75,12 +76,15 @@ impl Driver for MySqlDriver {
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default)| ColumnInfo {
-                name,
-                data_type,
-                nullable: is_nullable == "YES",
-                default,
-            })
+            .map(
+                |(name, data_type, is_nullable, default, column_type)| ColumnInfo {
+                    enum_values: parse_enum(&column_type),
+                    name,
+                    data_type,
+                    nullable: is_nullable == "YES",
+                    default,
+                },
+            )
             .collect())
     }
 
@@ -188,6 +192,43 @@ impl Driver for MySqlDriver {
     async fn close(&self) {
         self.pool.close().await;
     }
+}
+
+/// Parse the values out of a MySQL `enum('a','b',...)` / `set('a','b')` column type.
+fn parse_enum(column_type: &str) -> Vec<String> {
+    let lower = column_type.to_ascii_lowercase();
+    if !(lower.starts_with("enum(") || lower.starts_with("set(")) {
+        return vec![];
+    }
+    let Some(open) = column_type.find('(') else {
+        return vec![];
+    };
+    let close = column_type.rfind(')').unwrap_or(column_type.len());
+    let inner = &column_type[open + 1..close];
+    let mut out = Vec::new();
+    let mut chars = inner.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c == '\'' {
+            chars.next();
+            let mut s = String::new();
+            while let Some(ch) = chars.next() {
+                if ch == '\'' {
+                    if chars.peek() == Some(&'\'') {
+                        s.push('\'');
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                } else {
+                    s.push(ch);
+                }
+            }
+            out.push(s);
+        } else {
+            chars.next();
+        }
+    }
+    out
 }
 
 /// Best-effort decode by trying common types in order.

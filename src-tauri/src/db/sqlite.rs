@@ -65,6 +65,7 @@ impl Driver for SqliteDriver {
                 data_type,
                 nullable: notnull == 0,
                 default,
+                enum_values: vec![],
             });
         }
         Ok(cols)

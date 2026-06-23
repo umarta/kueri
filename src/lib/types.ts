@@ -52,6 +52,7 @@ export interface ColumnInfo {
   data_type: string;
   nullable: boolean;
   default: string | null;
+  enum_values?: string[];
 }
 
 export interface QueryResult {

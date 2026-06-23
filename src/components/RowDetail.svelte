@@ -29,6 +29,7 @@
 
   $: row = result && index !== null ? result.rows[index] : null;
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
+  $: enumMap = new Map(columns.map((c) => [c.name, c.enum_values ?? []]));
 
   type Entry = { col: string; type: string; i: number };
   $: entries = (insert
@@ -53,6 +54,16 @@
   const curStr = (e: Entry) => (e.col in edits ? edits[e.col] ?? "" : insert ? "" : fmt(row?.[e.i]));
   const nulled = (e: Entry) => (e.col in edits ? edits[e.col] === null : insert ? false : isNull(row?.[e.i]));
   const provided = (e: Entry) => e.col in edits; // insert: was this column given a value?
+  const isEnum = (e: Entry) => (enumMap.get(e.col)?.length ?? 0) > 0;
+  // Options for an enum select; keep the current value even if it's not in the set.
+  function enumOpts(e: Entry): string[] {
+    const base = enumMap.get(e.col) ?? [];
+    if (!insert && !nulled(e)) {
+      const cur = curStr(e);
+      if (cur && !base.includes(cur)) return [cur, ...base];
+    }
+    return base;
+  }
 
   function setVal(e: Entry, v: string | null) {
     if (insert) {
@@ -111,7 +122,7 @@
 
           {#if insert || editable}
             <div class="rd-control" class:edited={e.col in edits} class:nulled={nulled(e)}>
-              {#if isBool(e.type)}
+              {#if isEnum(e)}
                 <select
                   class="rd-input rd-select"
                   aria-label={e.col}
@@ -122,8 +133,24 @@
                   }}
                 >
                   {#if insert}<option value="__rd_default__" selected={!provided(e)}>(default)</option>{/if}
-                  <option value="true" selected={curStr(e) === "true" && provided(e) && !nulled(e)}>true</option>
-                  <option value="false" selected={curStr(e) === "false" && provided(e) && !nulled(e)}>false</option>
+                  {#each enumOpts(e) as opt (opt)}
+                    <option value={opt} selected={curStr(e) === opt && !nulled(e) && (!insert || provided(e))}>{opt}</option>
+                  {/each}
+                  <option value="__rd_null__" selected={nulled(e)}>NULL</option>
+                </select>
+              {:else if isBool(e.type)}
+                <select
+                  class="rd-input rd-select"
+                  aria-label={e.col}
+                  on:change={(ev) => {
+                    const v = ev.currentTarget.value;
+                    if (v === "__rd_default__") unset(e);
+                    else setVal(e, v === "__rd_null__" ? null : v);
+                  }}
+                >
+                  {#if insert}<option value="__rd_default__" selected={!provided(e)}>(default)</option>{/if}
+                  <option value="true" selected={curStr(e) === "true" && !nulled(e) && (!insert || provided(e))}>true</option>
+                  <option value="false" selected={curStr(e) === "false" && !nulled(e) && (!insert || provided(e))}>false</option>
                   <option value="__rd_null__" selected={nulled(e)}>NULL</option>
                 </select>
               {:else if isJson(e.type)}
