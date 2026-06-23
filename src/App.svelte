@@ -113,9 +113,7 @@
       const values = chunk.map((r) => `(${r.map((v) => (v === "" ? "NULL" : lit(v))).join(", ")})`).join(", ");
       const sql = `INSERT INTO ${into} (${collist}) VALUES ${values};`;
       try {
-        const s = performance.now();
         await api.executeQuery($activeConnectionId, sql, t.id);
-        logSql(`-- import ${chunk.length} rows into ${schema}.${table}`, { ms: Math.round(performance.now() - s) });
         ok += chunk.length;
       } catch (err) {
         failErr = (err as { message?: string })?.message ?? String(err);
@@ -218,16 +216,18 @@
   }
 
   // ── Query execution (always scoped to a specific tab `t`) ────────────────────
-  async function exec(t: QueryTab, sql: string) {
+  // `log` is true only for statements the user runs from the SQL console — the
+  // grid's own browse/edit SQL is never recorded in History.
+  async function exec(t: QueryTab, sql: string, log = false) {
     if (!$activeConnectionId) return;
     t.running = true; t.error = null; sync();
     const start = performance.now();
     try {
       t.result = await api.executeQuery($activeConnectionId, sql, t.id);
-      logSql(sql, { ms: Math.round(performance.now() - start) });
+      if (log) logSql(sql, { ms: Math.round(performance.now() - start) });
     } catch (e) {
       t.error = String(e); t.result = null;
-      logSql(sql, { ms: Math.round(performance.now() - start), error: String(e) });
+      if (log) logSql(sql, { ms: Math.round(performance.now() - start), error: String(e) });
     } finally {
       t.running = false; sync();
     }
@@ -283,7 +283,7 @@
     t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync();
     // Single statement: keep the editable single-table path.
     if (stmts.length === 1) {
-      await exec(t, stmts[0]);
+      await exec(t, stmts[0], true);
       if (t.result) await resolveEditable(t);
       return;
     }
@@ -543,9 +543,7 @@
           })
           .join(" AND ");
         const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
-        const us = performance.now();
         await api.executeQuery($activeConnectionId, upd, t.id);
-        logSql(upd, { ms: Math.round(performance.now() - us) });
       }
     } catch (err) {
       t.error = String(err); t.running = false; sync(); return;
@@ -664,9 +662,7 @@
           })
           .join(" AND ");
         const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
-        const s = performance.now();
         await api.executeQuery($activeConnectionId, del, t.id);
-        logSql(del, { ms: Math.round(performance.now() - s) });
       }
     } catch (err) {
       t.error = String(err); t.running = false; sync();
@@ -720,13 +716,10 @@
       ? `INSERT INTO ${into} (${set.map(qid).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
       : emptyInsert;
     t.running = true; t.error = null; sync();
-    const start = performance.now();
     try {
       await api.executeQuery($activeConnectionId, sql, t.id);
-      logSql(sql, { ms: Math.round(performance.now() - start) });
     } catch (err) {
       t.error = String(err); t.running = false; sync();
-      logSql(sql, { ms: Math.round(performance.now() - start), error: String(err) });
       return;
     }
     t.running = false; inserting = false; sync();
