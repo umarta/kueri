@@ -55,3 +55,7 @@ export function logSql(sql: string, opts: { ms?: number; error?: string } = {}) 
 export function clearLog() {
   queryLog.set([]);
 }
+
+export function removeLog(id: number) {
+  queryLog.update((l) => l.filter((e) => e.id !== id));
+}
