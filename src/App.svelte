@@ -17,11 +17,12 @@
   import Settings from "./components/Settings.svelte";
   import ImportDialog from "./components/ImportDialog.svelte";
   import SavedQueries from "./components/SavedQueries.svelte";
+  import ServerMonitor from "./components/ServerMonitor.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
-    readOnly, isReadStatement, shouldStartReadOnly,
+    readOnly, isReadStatement, shouldStartReadOnly, resolvePassword,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
   import { logSql } from "./lib/stores/log";
@@ -41,6 +42,33 @@
   let exportOpen = false;
   let csvImportOpen = false;
   let savedOpen = false;
+  let serverOpen = false;
+  let schemaNewOpen = false;
+  let schemaNewName = "";
+
+  async function createSchemaAction() {
+    if (!$activeConnectionId || !schemaNewName.trim()) return;
+    try {
+      await api.createSchema($activeConnectionId, schemaNewName.trim());
+      showToast(true, `Schema “${schemaNewName.trim()}” created.`);
+      schemaNewOpen = false;
+      reloadSidebar();
+    } catch (e) {
+      showToast(false, (e as { message?: string })?.message ?? String(e));
+    }
+  }
+  async function dropSchemaAction() {
+    if (!$activeConnectionId || !$activeSchema) return;
+    const ok = await ask(`Drop schema “${$activeSchema}” and everything in it? This cannot be undone.`, { title: "Drop schema", kind: "warning" });
+    if (!ok) return;
+    try {
+      await api.dropSchema($activeConnectionId, $activeSchema);
+      showToast(true, "Schema dropped.");
+      reloadSidebar();
+    } catch (e) {
+      showToast(false, (e as { message?: string })?.message ?? String(e));
+    }
+  }
   let toast: { ok: boolean; msg: string } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -756,6 +784,49 @@
     tabs = [blankQueryTab()];
     activeId = tabs[0].id;
   }
+
+  // ── Session restore — reopen the connections that were open last time ─────────
+  let sessionReady = false;
+  $: if (sessionReady) {
+    try {
+      localStorage.setItem(
+        "kueri.session",
+        JSON.stringify({ open: $workspaces.map((w) => w.id), active: $activeConnectionId }),
+      );
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  async function restoreSession() {
+    let sess: { open?: string[]; active?: string | null } | null = null;
+    try {
+      sess = JSON.parse(localStorage.getItem("kueri.session") || "null");
+    } catch {
+      /* ignore */
+    }
+    if (!sess?.open?.length) return;
+    const saved = await api.loadConnections().catch(() => [] as ConnectionConfig[]);
+    for (const cid of sess.open) {
+      const cfg = saved.find((c) => c.id === cid);
+      if (!cfg) continue;
+      try {
+        const full = { ...cfg, password: await resolvePassword(cfg) };
+        const id = await api.connect(full);
+        workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: full }]));
+      } catch {
+        /* skip connections that no longer reach */
+      }
+    }
+    const target = $workspaces.find((w) => w.id === sess.active) ?? $workspaces[0];
+    if (target) {
+      activeConnection.set(target.config);
+      activeConnectionId.set(target.id);
+      readOnly.set(shouldStartReadOnly(target.config.color, target.config.tag));
+      freshTabs();
+      schemaCatalog.set({});
+      reloadSidebar();
+    }
+  }
   function stashCurrent() {
     if ($activeConnectionId) stash[$activeConnectionId] = { tabs, activeId, seq };
   }
@@ -842,6 +913,9 @@
       case "cancel_query": cancelActive(); break;
       case "explain": explainQuery(); break;
       case "saved_queries": savedOpen = true; break;
+      case "server_monitor": serverOpen = true; break;
+      case "new_schema": schemaNewName = ""; schemaNewOpen = true; break;
+      case "drop_schema": dropSchemaAction(); break;
       case "gen_select": generateSql("select"); break;
       case "gen_insert": generateSql("insert"); break;
       case "gen_update": generateSql("update"); break;
@@ -877,6 +951,12 @@
     } catch {
       /* not running under Tauri (browser dev) */
     }
+    try {
+      await restoreSession();
+    } catch {
+      /* ignore restore failures */
+    }
+    sessionReady = true;
   });
   onDestroy(() => unlistenMenu?.());
 
@@ -1147,6 +1227,26 @@
   <ExportDialog cfg={$activeConnection} on:close={() => (exportOpen = false)} />
 {/if}
 
+{#if serverOpen && $activeConnectionId}
+  <ServerMonitor connectionId={$activeConnectionId} on:close={() => (serverOpen = false)} />
+{/if}
+
+{#if schemaNewOpen}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="prompt-backdrop" on:click|self={() => (schemaNewOpen = false)}>
+    <div class="prompt" role="dialog" aria-modal="true">
+      <span class="prompt-title">New schema</span>
+      <!-- svelte-ignore a11y-autofocus -->
+      <input class="prompt-input" bind:value={schemaNewName} autofocus placeholder="schema name" spellcheck="false"
+        on:keydown={(e) => { if (e.key === "Enter") createSchemaAction(); else if (e.key === "Escape") schemaNewOpen = false; }} />
+      <div class="prompt-foot">
+        <button class="pbtn ghost" on:click={() => (schemaNewOpen = false)}>Cancel</button>
+        <button class="pbtn primary" on:click={createSchemaAction} disabled={!schemaNewName.trim()}>Create</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if savedOpen}
   <SavedQueries
     currentSql={tab.kind === "query" ? tab.doc : ""}
@@ -1178,6 +1278,18 @@
   .shell { display: flex; height: 100vh; overflow: hidden; }
   .app { flex: 1; min-width: 0; display: grid; grid-template-rows: 44px 1fr; overflow: hidden; }
   .add-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg-content); }
+
+  .prompt-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; background: rgba(0,0,0,0.45); }
+  .prompt { width: min(360px, 90vw); background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-3); }
+  .prompt-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .prompt-input { height: 32px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 13px; padding: 0 var(--s-3); }
+  .prompt-input:focus { outline: none; border-color: var(--accent); }
+  .prompt-foot { display: flex; justify-content: flex-end; gap: var(--s-2); }
+  .pbtn { height: 28px; padding: 0 var(--s-4); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; font-weight: 600; border: 1px solid transparent; }
+  .pbtn.ghost { background: transparent; border-color: var(--border); color: var(--ink-soft); }
+  .pbtn.ghost:hover { background: var(--bg-elevated); }
+  .pbtn.primary { background: var(--accent); color: var(--accent-ink); }
+  .pbtn.primary:disabled { opacity: 0.5; }
 
   .toast {
     position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: var(--z-toast);

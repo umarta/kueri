@@ -6,9 +6,10 @@ use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
-    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+    ColumnInfo, Driver, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo,
+    TableInfo,
 };
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 pub struct PgDriver {
     pool: PgPool,
@@ -60,10 +61,14 @@ impl Driver for PgDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
-            "SELECT column_name, data_type, is_nullable, column_default, udt_name \
-             FROM information_schema.columns \
-             WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+        let rows: Vec<(String, String, String, Option<String>, String, Option<String>)> = sqlx::query_as(
+            "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default, c.udt_name, pgd.description \
+             FROM information_schema.columns c \
+             LEFT JOIN pg_catalog.pg_statio_all_tables st \
+               ON st.schemaname = c.table_schema AND st.relname = c.table_name \
+             LEFT JOIN pg_catalog.pg_description pgd \
+               ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position \
+             WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position",
         )
         .bind(schema)
         .bind(table)
@@ -84,23 +89,26 @@ impl Driver for PgDriver {
         }
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default, udt_name)| {
-                // For enums, information_schema reports "USER-DEFINED"; show the type
-                // name instead and attach its values.
-                let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
-                let data_type = if data_type == "USER-DEFINED" {
-                    udt_name
-                } else {
-                    data_type
-                };
-                ColumnInfo {
-                    name,
-                    data_type,
-                    nullable: is_nullable == "YES",
-                    default,
-                    enum_values,
-                }
-            })
+            .map(
+                |(name, data_type, is_nullable, default, udt_name, comment)| {
+                    // For enums, information_schema reports "USER-DEFINED"; show the type
+                    // name instead and attach its values.
+                    let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
+                    let data_type = if data_type == "USER-DEFINED" {
+                        udt_name
+                    } else {
+                        data_type
+                    };
+                    ColumnInfo {
+                        name,
+                        data_type,
+                        nullable: is_nullable == "YES",
+                        default,
+                        enum_values,
+                        comment,
+                    }
+                },
+            )
             .collect())
     }
 
@@ -176,6 +184,71 @@ impl Driver for PgDriver {
                 method,
                 predicate: predicate.unwrap_or_default(),
                 columns: cols.split(',').map(|s| s.to_string()).collect(),
+            })
+            .collect())
+    }
+
+    async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>> {
+        let rows: Vec<(
+            i32,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            Option<String>,
+        )> = sqlx::query_as(
+            "SELECT pid, usename, datname, state, \
+                 EXTRACT(EPOCH FROM (now() - query_start))::int, query \
+                 FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND query <> '' \
+                 ORDER BY query_start NULLS LAST",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(pid, user, db, state, secs, query)| ProcessInfo {
+                pid: pid.to_string(),
+                user: user.unwrap_or_default(),
+                database: db.unwrap_or_default(),
+                state: state.unwrap_or_default(),
+                seconds: secs.unwrap_or(0) as i64,
+                query: query.unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn kill_process(&self, pid: &str) -> AppResult<()> {
+        let n: i32 = pid
+            .parse()
+            .map_err(|_| AppError::Other(format!("invalid pid: {pid}")))?;
+        sqlx::query("SELECT pg_terminate_backend($1)")
+            .bind(n)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_roles(&self) -> AppResult<Vec<RoleInfo>> {
+        let rows: Vec<(String, bool, bool, bool)> = sqlx::query_as(
+            "SELECT rolname, rolsuper, rolcreatedb, rolcanlogin FROM pg_roles ORDER BY rolname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, super_, createdb, login)| {
+                let mut a = vec![];
+                if super_ {
+                    a.push("superuser");
+                }
+                if createdb {
+                    a.push("createdb");
+                }
+                a.push(if login { "login" } else { "no-login" });
+                RoleInfo {
+                    name,
+                    attributes: a.join(", "),
+                }
             })
             .collect())
     }

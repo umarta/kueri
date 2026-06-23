@@ -60,6 +60,7 @@ export interface ColumnInfo {
   nullable: boolean;
   default: string | null;
   enum_values?: string[];
+  comment?: string | null;
 }
 
 export interface QueryResult {
@@ -102,6 +103,22 @@ export interface ForeignKey {
   ref_schema: string;
   ref_table: string;
   ref_column: string;
+}
+
+/** A running server session/query (Server Monitor). */
+export interface ProcessInfo {
+  pid: string;
+  user: string;
+  database: string;
+  state: string;
+  seconds: number;
+  query: string;
+}
+
+/** A database role/user. */
+export interface RoleInfo {
+  name: string;
+  attributes: string;
 }
 
 /** An index on a table. */

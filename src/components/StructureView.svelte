@@ -313,7 +313,7 @@
                   <span class="dim">{fkMap.has(c.name) ? "" : "—"}</span>
                 {/if}
               </td>
-              <td class="dim">—</td>
+              <td class:dim={!c.comment} title={c.comment ?? ""}>{c.comment ?? "—"}</td>
               <td class="ax">
                 {#if canEdit}
                   <button class="act" title="Rename column" on:click={() => startRename(c.name)} disabled={busy}>

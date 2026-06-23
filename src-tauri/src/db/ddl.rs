@@ -268,6 +268,21 @@ pub fn add_foreign_key(
     )
 }
 
+pub fn create_schema(d: Dialect, name: &str) -> String {
+    match d {
+        // MySQL has no schemas — a "schema" is a database.
+        Dialect::MySql => format!("CREATE DATABASE {};", ident(d, name)),
+        _ => format!("CREATE SCHEMA {};", ident(d, name)),
+    }
+}
+
+pub fn drop_schema(d: Dialect, name: &str) -> String {
+    match d {
+        Dialect::MySql => format!("DROP DATABASE {};", ident(d, name)),
+        _ => format!("DROP SCHEMA {} CASCADE;", ident(d, name)),
+    }
+}
+
 pub fn drop_index(d: Dialect, schema: &str, table: &str, name: &str) -> String {
     match d {
         // MySQL indexes are scoped to their table.

@@ -3,7 +3,9 @@ use tauri::State;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::ColumnDef;
-use crate::db::driver::{ColumnInfo, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo, TableInfo,
+};
 use crate::db::pool::AppState;
 use crate::error::{AppError, AppResult};
 
@@ -187,6 +189,31 @@ pub async fn execute_query(
 #[tauri::command]
 pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
     state.cancel(&query_id);
+}
+
+#[tauri::command]
+pub async fn list_processes(state: State<'_, AppState>, id: String) -> AppResult<Vec<ProcessInfo>> {
+    state.get(&id)?.list_processes().await
+}
+
+#[tauri::command]
+pub async fn kill_process(state: State<'_, AppState>, id: String, pid: String) -> AppResult<()> {
+    state.get(&id)?.kill_process(&pid).await
+}
+
+#[tauri::command]
+pub async fn list_roles(state: State<'_, AppState>, id: String) -> AppResult<Vec<RoleInfo>> {
+    state.get(&id)?.list_roles().await
+}
+
+#[tauri::command]
+pub async fn create_schema(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
+    state.get(&id)?.create_schema(&name).await
+}
+
+#[tauri::command]
+pub async fn drop_schema(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
+    state.get(&id)?.drop_schema(&name).await
 }
 
 // ── DDL commands (database-agnostic; the driver renders the right SQL) ─────────

@@ -8,6 +8,7 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { bracketMatching, indentOnInput } from "@codemirror/language";
   import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+  import { search, searchKeymap } from "@codemirror/search";
   import { sql, PostgreSQL, MySQL, SQLite, MSSQL, StandardSQL, type SQLDialect } from "@codemirror/lang-sql";
   import { format as formatSql } from "sql-formatter";
   import { kueriEditorTheme } from "../lib/editor/theme";
@@ -85,9 +86,11 @@
           bracketMatching(),
           closeBrackets(),
           autocompletion({ activateOnTyping: true }),
+          search({ top: true }),
           keymap.of([
             { key: "Mod-Enter", preventDefault: true, run: runQuery },
             ...closeBracketsKeymap,
+            ...searchKeymap,
             ...defaultKeymap,
             ...historyKeymap,
             ...completionKeymap,
