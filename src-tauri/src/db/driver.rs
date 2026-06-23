@@ -25,6 +25,9 @@ pub struct ColumnInfo {
     /// Allowed values for enum columns (empty for non-enums); powers a dropdown editor.
     #[serde(default)]
     pub enum_values: Vec<String>,
+    /// Column comment / description, if any.
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 #[derive(Serialize)]

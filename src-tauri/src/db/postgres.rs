@@ -61,10 +61,14 @@ impl Driver for PgDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
-            "SELECT column_name, data_type, is_nullable, column_default, udt_name \
-             FROM information_schema.columns \
-             WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+        let rows: Vec<(String, String, String, Option<String>, String, Option<String>)> = sqlx::query_as(
+            "SELECT c.column_name, c.data_type, c.is_nullable, c.column_default, c.udt_name, pgd.description \
+             FROM information_schema.columns c \
+             LEFT JOIN pg_catalog.pg_statio_all_tables st \
+               ON st.schemaname = c.table_schema AND st.relname = c.table_name \
+             LEFT JOIN pg_catalog.pg_description pgd \
+               ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position \
+             WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position",
         )
         .bind(schema)
         .bind(table)
@@ -85,23 +89,26 @@ impl Driver for PgDriver {
         }
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default, udt_name)| {
-                // For enums, information_schema reports "USER-DEFINED"; show the type
-                // name instead and attach its values.
-                let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
-                let data_type = if data_type == "USER-DEFINED" {
-                    udt_name
-                } else {
-                    data_type
-                };
-                ColumnInfo {
-                    name,
-                    data_type,
-                    nullable: is_nullable == "YES",
-                    default,
-                    enum_values,
-                }
-            })
+            .map(
+                |(name, data_type, is_nullable, default, udt_name, comment)| {
+                    // For enums, information_schema reports "USER-DEFINED"; show the type
+                    // name instead and attach its values.
+                    let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
+                    let data_type = if data_type == "USER-DEFINED" {
+                        udt_name
+                    } else {
+                        data_type
+                    };
+                    ColumnInfo {
+                        name,
+                        data_type,
+                        nullable: is_nullable == "YES",
+                        default,
+                        enum_values,
+                        comment,
+                    }
+                },
+            )
             .collect())
     }
 

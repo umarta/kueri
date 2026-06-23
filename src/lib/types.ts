@@ -60,6 +60,7 @@ export interface ColumnInfo {
   nullable: boolean;
   default: string | null;
   enum_values?: string[];
+  comment?: string | null;
 }
 
 export interface QueryResult {

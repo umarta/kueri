@@ -65,9 +65,9 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+        let rows: Vec<(String, String, String, Option<String>, String, String)> = sqlx::query_as(
             "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), \
-                    CAST(column_default AS CHAR), CAST(column_type AS CHAR) \
+                    CAST(column_default AS CHAR), CAST(column_type AS CHAR), CAST(column_comment AS CHAR) \
              FROM information_schema.columns \
              WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position",
         )
@@ -78,12 +78,17 @@ impl Driver for MySqlDriver {
         Ok(rows
             .into_iter()
             .map(
-                |(name, data_type, is_nullable, default, column_type)| ColumnInfo {
+                |(name, data_type, is_nullable, default, column_type, comment)| ColumnInfo {
                     enum_values: parse_enum(&column_type),
                     name,
                     data_type,
                     nullable: is_nullable == "YES",
                     default,
+                    comment: if comment.is_empty() {
+                        None
+                    } else {
+                        Some(comment)
+                    },
                 },
             )
             .collect())
