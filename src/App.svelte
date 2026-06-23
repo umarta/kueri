@@ -137,6 +137,14 @@
   function openHistoryQuery(sql: string) {
     openSqlTab(sql, "History");
   }
+  function runInNewTab(sql: string) {
+    const t = blankQueryTab();
+    t.doc = sql;
+    t.title = "Query";
+    tabs = [...tabs, t];
+    activeId = t.id;
+    runSql(t, sql);
+  }
 
   // ── Generate SQL from the open table (#32) ───────────────────────────────────
   async function generateSql(kind: "select" | "insert" | "update" | "create") {
@@ -967,6 +975,7 @@
           on:selectTable={onSelectTable}
           on:openTableFull={onOpenTableFull}
           on:openQuery={(e) => openSqlTab(e.detail, "Query")}
+          on:runQuery={(e) => runInNewTab(e.detail)}
         />
       {/if}
       <main class="main">

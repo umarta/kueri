@@ -4,7 +4,7 @@
   import { activeConnectionId, activeConnection, catalogTables, activeSchema as activeSchemaStore, readOnly } from "../lib/stores/connection";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
-  import { queryLog } from "../lib/stores/log";
+  import { queryLog, clearLog, removeLog, type LogEntry } from "../lib/stores/log";
   import Modal from "./Modal.svelte";
   import type { SchemaInfo, TableInfo, DbKind, ColumnInfo } from "../lib/types";
 
@@ -15,7 +15,24 @@
     selectTable: { schema: string; table: string };
     openTableFull: { schema: string; table: string };
     openQuery: string;
+    runQuery: string;
   }>();
+
+  // History row context menu
+  let histCtx: { x: number; y: number; entry: LogEntry } | null = null;
+  function openHistCtx(e: MouseEvent, entry: LogEntry) {
+    e.preventDefault();
+    histCtx = { x: Math.min(e.clientX, window.innerWidth - 200), y: e.clientY, entry };
+  }
+  function histRun() { if (histCtx) dispatch("runQuery", histCtx.entry.sql); histCtx = null; }
+  function histOpen() { if (histCtx) dispatch("openQuery", histCtx.entry.sql); histCtx = null; }
+  function histCopy() { if (histCtx) navigator.clipboard.writeText(histCtx.entry.sql).catch(() => {}); histCtx = null; }
+  function histToQueries() {
+    if (histCtx) { const sql = histCtx.entry.sql; addSaved(sql.split("\n")[0].slice(0, 48), sql); }
+    histCtx = null;
+  }
+  function histDelete() { if (histCtx) removeLog(histCtx.entry.id); histCtx = null; }
+  function histClearAll() { clearLog(); histCtx = null; }
 
   // ── Left-panel tabs (Items / Queries / History) ──────────────────────────────
   let panel: "items" | "queries" | "history" = "items";
@@ -472,7 +489,7 @@
       {#each historyGroups as [date, items] (date)}
         <div class="group-head">{fmtDate(date)}</div>
         {#each items as h (h.id)}
-          <button class="hrow" class:err={h.error} on:click={() => dispatch("openQuery", h.sql)} title={h.sql}>
+          <button class="hrow" class:err={h.error} on:click={() => dispatch("openQuery", h.sql)} on:contextmenu={(e) => openHistCtx(e, h)} title={h.sql}>
             <span class="htime">{h.time}</span>
             <code class="hsql">{h.sql}</code>
           </button>
@@ -482,6 +499,21 @@
     </nav>
   {/if}
 </aside>
+
+{#if histCtx}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="ctx-backdrop" on:click={() => (histCtx = null)} on:contextmenu|preventDefault={() => (histCtx = null)}></div>
+  <div class="ctx-menu" style="left: {histCtx.x}px; top: {histCtx.y}px;">
+    <button class="ctx-item" on:click={histRun}>Run</button>
+    <button class="ctx-item" on:click={histCopy}>Copy</button>
+    <button class="ctx-item" on:click={histOpen}>Insert into SQL Editor</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item" on:click={histToQueries}>Add to Queries</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item danger" on:click={histDelete}>Delete</button>
+    <button class="ctx-item danger" on:click={histClearAll}>Clear all History</button>
+  </div>
+{/if}
 
 <!-- New table: column designer -->
 {#if showAdd}
@@ -666,6 +698,13 @@
   .htime { font-size: 10px; color: var(--faint); flex: none; font-family: var(--font-mono); }
   .hsql { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hrow.err .hsql { color: var(--danger); }
+
+  .ctx-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
+  .ctx-menu { position: fixed; z-index: var(--z-dropdown); min-width: 180px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--r-md); box-shadow: var(--shadow-pop); padding: var(--s-1); display: flex; flex-direction: column; }
+  .ctx-item { text-align: left; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12.5px; color: var(--ink-soft); background: none; }
+  .ctx-item:hover { background: var(--accent); color: var(--accent-ink); }
+  .ctx-item.danger:hover { background: var(--danger); color: #fff; }
+  .ctx-sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--hairline); }
 
   .row { display: flex; align-items: center; border-radius: var(--r-sm); }
   .row:hover { background: var(--bg-elevated); }
