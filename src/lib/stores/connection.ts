@@ -19,6 +19,21 @@ export const workspaces = writable<Workspace[]>([]);
  *  table names in query-tab SQL (e.g. `SELECT * FROM orders`). */
 export const activeSchema = writable<string>("");
 
+/** Read-only / safe mode for the active connection — blocks writes & DDL.
+ *  Defaults on for production-tagged connections. */
+export const readOnly = writable<boolean>(false);
+
+/** A statement is "read-only" if it can't modify data or schema. */
+export function isReadStatement(sql: string): boolean {
+  const s = sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim().toLowerCase();
+  return /^(select|with|show|explain|describe|desc|pragma|table|values)\b/.test(s);
+}
+
+/** Whether a connection should start in read-only mode (production safety). */
+export function shouldStartReadOnly(color?: string, tag?: string): boolean {
+  return color === "prod" || /prod/i.test(tag ?? "");
+}
+
 /**
  * Schema catalog for editor autocomplete: table name → known column names.
  * Populated cheaply as the user browses; reset on disconnect.

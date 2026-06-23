@@ -22,6 +22,9 @@ pub struct ColumnInfo {
     pub data_type: String,
     pub nullable: bool,
     pub default: Option<String>,
+    /// Allowed values for enum columns (empty for non-enums); powers a dropdown editor.
+    #[serde(default)]
+    pub enum_values: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -29,6 +32,27 @@ pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Value>>,
     pub row_count: usize,
+}
+
+/// A foreign-key edge from a column to the referenced table column.
+#[derive(Serialize)]
+pub struct ForeignKey {
+    pub column: String,
+    pub ref_schema: String,
+    pub ref_table: String,
+    pub ref_column: String,
+}
+
+/// An index on a table.
+#[derive(Serialize)]
+pub struct IndexInfo {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+    /// Access method (btree/hash/gin/…); shown as "index_algorithm".
+    pub method: String,
+    /// Partial-index predicate (empty when not partial); shown as "condition".
+    pub predicate: String,
 }
 
 /// Every relational backend implements this. The UI and Tauri commands only
@@ -44,6 +68,71 @@ pub trait Driver: Send + Sync {
     async fn list_primary_keys(&self, schema: &str, table: &str) -> AppResult<Vec<String>>;
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult>;
     async fn close(&self);
+
+    /// Foreign keys declared on a table. Default empty (engines without FK
+    /// metadata); the relational drivers override it.
+    async fn list_foreign_keys(&self, _schema: &str, _table: &str) -> AppResult<Vec<ForeignKey>> {
+        Ok(vec![])
+    }
+
+    /// Indexes on a table. Default empty; relational drivers override it.
+    async fn list_indexes(&self, _schema: &str, _table: &str) -> AppResult<Vec<IndexInfo>> {
+        Ok(vec![])
+    }
+    async fn create_index(
+        &self,
+        schema: &str,
+        table: &str,
+        name: &str,
+        columns: &[String],
+        unique: bool,
+    ) -> AppResult<()> {
+        self.run_query(&ddl::create_index(
+            self.dialect(),
+            schema,
+            table,
+            name,
+            columns,
+            unique,
+        ))
+        .await?;
+        Ok(())
+    }
+    async fn drop_index(&self, schema: &str, table: &str, name: &str) -> AppResult<()> {
+        self.run_query(&ddl::drop_index(self.dialect(), schema, table, name))
+            .await?;
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn add_foreign_key(
+        &self,
+        schema: &str,
+        table: &str,
+        column: &str,
+        ref_table: &str,
+        ref_column: &str,
+        name: &str,
+        validate: bool,
+    ) -> AppResult<()> {
+        if self.dialect() == Dialect::Sqlite {
+            return Err(AppError::Other(
+                "SQLite can't add a foreign key to an existing table (requires a table rebuild)."
+                    .into(),
+            ));
+        }
+        self.run_query(&ddl::add_foreign_key(
+            self.dialect(),
+            schema,
+            table,
+            column,
+            ref_table,
+            ref_column,
+            name,
+            validate,
+        ))
+        .await?;
+        Ok(())
+    }
 
     // ── DDL ──────────────────────────────────────────────────────────────────
     // Each driver reports its SQL dialect; the default methods below build the
@@ -147,5 +236,45 @@ pub trait Driver: Send + Sync {
         ))
         .await?;
         Ok(())
+    }
+
+    /// `CREATE TABLE` text for a table. The default reconstructs it from the
+    /// column list + primary key (used by Postgres, which has no `SHOW CREATE`);
+    /// MySQL and SQLite override this with their native, exact statements.
+    async fn table_ddl(&self, schema: &str, table: &str) -> AppResult<String> {
+        let d = self.dialect();
+        let cols = self.list_columns(schema, table).await?;
+        let pks = self.list_primary_keys(schema, table).await?;
+        if cols.is_empty() {
+            return Err(AppError::Other(format!(
+                "Table {table} not found or has no columns."
+            )));
+        }
+        let mut lines: Vec<String> = cols
+            .iter()
+            .map(|c| {
+                let mut l = format!("  {} {}", ddl::ident(d, &c.name), c.data_type);
+                if !c.nullable {
+                    l.push_str(" NOT NULL");
+                }
+                if let Some(def) = c.default.as_deref().filter(|s| !s.is_empty()) {
+                    l.push_str(&format!(" DEFAULT {def}"));
+                }
+                l
+            })
+            .collect();
+        if !pks.is_empty() {
+            let cols = pks
+                .iter()
+                .map(|p| ddl::ident(d, p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("  PRIMARY KEY ({cols})"));
+        }
+        Ok(format!(
+            "CREATE TABLE {} (\n{}\n);",
+            ddl::qualify(d, schema, table),
+            lines.join(",\n")
+        ))
     }
 }

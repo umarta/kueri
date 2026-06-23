@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
-use sqlx::{Column, Row, ValueRef};
+use sqlx::{Column, Executor, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+};
 use crate::error::AppResult;
 
 pub struct SqliteDriver {
@@ -63,6 +65,7 @@ impl Driver for SqliteDriver {
                 data_type,
                 nullable: notnull == 0,
                 default,
+                enum_values: vec![],
             });
         }
         Ok(cols)
@@ -85,12 +88,77 @@ impl Driver for SqliteDriver {
         Ok(keyed.into_iter().map(|(_, name)| name).collect())
     }
 
+    async fn list_foreign_keys(&self, _schema: &str, table: &str) -> AppResult<Vec<ForeignKey>> {
+        // PRAGMA can't be parameterized; table name is from our own sidebar.
+        let q = format!(
+            "PRAGMA foreign_key_list(\"{}\")",
+            table.replace('"', "\"\"")
+        );
+        let rows = sqlx::query(&q).fetch_all(&self.pool).await?;
+        let mut out = Vec::new();
+        for r in &rows {
+            let column: String = r.try_get("from").unwrap_or_default();
+            let ref_table: String = r.try_get("table").unwrap_or_default();
+            // `to` is NULL when the FK targets the referenced table's primary key.
+            let ref_column: Option<String> = r.try_get("to").ok();
+            out.push(ForeignKey {
+                column,
+                ref_schema: "main".into(),
+                ref_table,
+                ref_column: ref_column.unwrap_or_default(),
+            });
+        }
+        Ok(out)
+    }
+
+    async fn list_indexes(&self, _schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let q = format!("PRAGMA index_list(\"{}\")", table.replace('"', "\"\""));
+        let rows = sqlx::query(&q).fetch_all(&self.pool).await?;
+        let mut out = Vec::new();
+        for r in &rows {
+            let name: String = r.try_get("name").unwrap_or_default();
+            let unique: i64 = r.try_get("unique").unwrap_or(0);
+            let iq = format!("PRAGMA index_info(\"{}\")", name.replace('"', "\"\""));
+            let irows = sqlx::query(&iq).fetch_all(&self.pool).await?;
+            let columns = irows
+                .iter()
+                .map(|ir| ir.try_get::<String, _>("name").unwrap_or_default())
+                .collect();
+            out.push(IndexInfo {
+                name,
+                unique: unique == 1,
+                method: "btree".into(),
+                predicate: String::new(),
+                columns,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn table_ddl(&self, _schema: &str, table: &str) -> AppResult<String> {
+        // sqlite_master stores the original CREATE statement verbatim.
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('table','view')",
+        )
+        .bind(table)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row
+            .0
+            .map(|s| format!("{};", s.trim_end_matches(';')))
+            .unwrap_or_default())
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = rows
-            .first()
-            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-            .unwrap_or_default();
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            match (&self.pool).describe(sql).await {
+                Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
+                Err(_) => Vec::new(),
+            }
+        };
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut rec = Vec::with_capacity(row.columns().len());

@@ -33,14 +33,14 @@ fn dq(v: &str) -> String {
 fn bq(v: &str) -> String {
     format!("`{}`", v.replace('`', "``"))
 }
-fn ident(d: Dialect, v: &str) -> String {
+pub fn ident(d: Dialect, v: &str) -> String {
     match d {
         Dialect::MySql => bq(v),
         _ => dq(v),
     }
 }
 /// Schema-qualified table name (SQLite has no schema namespace).
-fn qualify(d: Dialect, schema: &str, table: &str) -> String {
+pub fn qualify(d: Dialect, schema: &str, table: &str) -> String {
     match d {
         Dialect::MySql => format!("{}.{}", bq(schema), bq(table)),
         Dialect::Sqlite => dq(table),
@@ -215,5 +215,69 @@ pub fn set_column_nullable(
                 format!("ALTER TABLE {q} ALTER COLUMN {c} DROP NOT NULL;")
             }
         }
+    }
+}
+
+pub fn create_index(
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    name: &str,
+    columns: &[String],
+    unique: bool,
+) -> String {
+    let u = if unique { "UNIQUE " } else { "" };
+    let cols = columns
+        .iter()
+        .map(|c| ident(d, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "CREATE {u}INDEX {} ON {} ({cols});",
+        ident(d, name),
+        qualify(d, schema, table)
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn add_foreign_key(
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    column: &str,
+    ref_table: &str,
+    ref_column: &str,
+    name: &str,
+    validate: bool,
+) -> String {
+    // Postgres can add the constraint without checking existing rows (NOT VALID),
+    // useful when legacy data has orphans; it's enforced for new/changed rows.
+    let not_valid = if !validate && d == Dialect::Postgres {
+        " NOT VALID"
+    } else {
+        ""
+    };
+    format!(
+        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}){};",
+        qualify(d, schema, table),
+        ident(d, name),
+        ident(d, column),
+        qualify(d, schema, ref_table),
+        ident(d, ref_column),
+        not_valid
+    )
+}
+
+pub fn drop_index(d: Dialect, schema: &str, table: &str, name: &str) -> String {
+    match d {
+        // MySQL indexes are scoped to their table.
+        Dialect::MySql => format!(
+            "DROP INDEX {} ON {};",
+            ident(d, name),
+            qualify(d, schema, table)
+        ),
+        Dialect::Sqlite => format!("DROP INDEX {};", ident(d, name)),
+        // Postgres/SQL Server: the index lives in the table's schema.
+        _ => format!("DROP INDEX {}.{};", ident(d, schema), ident(d, name)),
     }
 }

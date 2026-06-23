@@ -154,6 +154,7 @@ impl Driver for SqlServerDriver {
                     .to_string(),
                 nullable: r.try_get::<&str, _>(2).ok().flatten() == Some("YES"),
                 default: r.try_get::<&str, _>(3).ok().flatten().map(str::to_string),
+                enum_values: vec![],
             })
             .collect())
     }

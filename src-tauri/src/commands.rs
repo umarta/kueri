@@ -3,9 +3,15 @@ use tauri::State;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::ColumnDef;
-use crate::db::driver::{ColumnInfo, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{ColumnInfo, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo};
 use crate::db::pool::AppState;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+
+/// Write text to a path (used by CSV/JSON export; the path comes from a save dialog).
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> AppResult<()> {
+    std::fs::write(&path, content).map_err(|e| AppError::Other(format!("write {path}: {e}")))
+}
 
 #[tauri::command]
 pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> AppResult<String> {
@@ -42,6 +48,90 @@ pub async fn list_columns(
     table: String,
 ) -> AppResult<Vec<ColumnInfo>> {
     state.get(&id)?.list_columns(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn table_ddl(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<String> {
+    state.get(&id)?.table_ddl(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn foreign_keys(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<Vec<ForeignKey>> {
+    state.get(&id)?.list_foreign_keys(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn list_indexes(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<Vec<IndexInfo>> {
+    state.get(&id)?.list_indexes(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn create_index(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    name: String,
+    columns: Vec<String>,
+    unique: bool,
+) -> AppResult<()> {
+    state
+        .get(&id)?
+        .create_index(&schema, &table, &name, &columns, unique)
+        .await
+}
+
+#[tauri::command]
+pub async fn drop_index(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    name: String,
+) -> AppResult<()> {
+    state.get(&id)?.drop_index(&schema, &table, &name).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_foreign_key(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    column: String,
+    ref_table: String,
+    ref_column: String,
+    name: String,
+    validate: bool,
+) -> AppResult<()> {
+    state
+        .get(&id)?
+        .add_foreign_key(
+            &schema,
+            &table,
+            &column,
+            &ref_table,
+            &ref_column,
+            &name,
+            validate,
+        )
+        .await
 }
 
 #[tauri::command]

@@ -5,6 +5,8 @@ import type {
   TableInfo,
   ColumnInfo,
   QueryResult,
+  ForeignKey,
+  IndexInfo,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -17,6 +19,18 @@ export const api = {
     invoke<TableInfo[]>("list_tables", { id, schema }),
   listColumns: (id: string, schema: string, table: string) =>
     invoke<ColumnInfo[]>("list_columns", { id, schema, table }),
+  tableDdl: (id: string, schema: string, table: string) =>
+    invoke<string>("table_ddl", { id, schema, table }),
+  foreignKeys: (id: string, schema: string, table: string) =>
+    invoke<ForeignKey[]>("foreign_keys", { id, schema, table }),
+  listIndexes: (id: string, schema: string, table: string) =>
+    invoke<IndexInfo[]>("list_indexes", { id, schema, table }),
+  createIndex: (id: string, schema: string, table: string, name: string, columns: string[], unique: boolean) =>
+    invoke<void>("create_index", { id, schema, table, name, columns, unique }),
+  dropIndex: (id: string, schema: string, table: string, name: string) =>
+    invoke<void>("drop_index", { id, schema, table, name }),
+  addForeignKey: (id: string, schema: string, table: string, column: string, refTable: string, refColumn: string, name: string, validate: boolean) =>
+    invoke<void>("add_foreign_key", { id, schema, table, column, refTable, refColumn, name, validate }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
   executeQuery: (id: string, sql: string) =>
@@ -49,6 +63,10 @@ export const api = {
     invoke<string>("pg_export", { cfg, path, format, contents }),
   pgImport: (cfg: ConnectionConfig, path: string) =>
     invoke<string>("pg_import", { cfg, path }),
+
+  // Write a text file (CSV/JSON export; path comes from a save dialog).
+  writeTextFile: (path: string, content: string) =>
+    invoke<void>("write_text_file", { path, content }),
 
   // Persistence (connections file) + OS keychain (passwords).
   loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),

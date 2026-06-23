@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, onMount, onDestroy } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+  import { open as openFileDialog, ask, save } from "@tauri-apps/plugin-dialog";
   import Welcome from "./components/Welcome.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import WorkspaceRail from "./components/WorkspaceRail.svelte";
@@ -19,6 +19,7 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
+    readOnly, isReadStatement, shouldStartReadOnly,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
   import { logSql } from "./lib/stores/log";
@@ -27,10 +28,13 @@
   let sidebarOpen = true;
   let sidebar: Sidebar;
   let grid: DataGrid;
+  let editor: QueryEditor;
   let paletteOpen = false;
   let logOpen = false;
   let detailOpen = false;
   let inserting = false;
+  let insertInitial: Record<string, string | null> | null = null;
+  let insertNonce = 0;
   let settingsOpen = false;
   let exportOpen = false;
   let toast: { ok: boolean; msg: string } | null = null;
@@ -79,7 +83,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -87,7 +91,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -128,7 +132,10 @@
 
   // Editor path: detect whether the query maps to one updatable table so the
   // result (grid + row detail) can be edited; otherwise it stays read-only.
+  const blockedMsg = "Read-only mode is on for this connection — toggle the lock in the toolbar to allow writes.";
+
   async function runSql(t: QueryTab, sql: string) {
+    if ($readOnly && !isReadStatement(sql)) { showToast(false, blockedMsg); return; }
     t.editableTable = null; t.pkColumns = []; t.columns = []; sync();
     await exec(t, sql);
     if (t.result) await resolveEditable(t);
@@ -206,7 +213,9 @@
     t.selected = { schema, table };
     t.title = table;
     t.selectedRow = null;
-    t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)} LIMIT ${$settings.rowLimit};`;
+    const order = t.sort ? ` ORDER BY ${qid(t.sort.col)} ${t.sort.dir === "desc" ? "DESC" : "ASC"}` : "";
+    const off = t.offset > 0 ? ` OFFSET ${t.offset}` : "";
+    t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)}${order} LIMIT ${$settings.rowLimit}${off};`;
     sync();
     await exec(t, t.doc);
     t.editableTable = t.result ? { schema, table } : null;
@@ -217,6 +226,7 @@
       } catch {
         t.pkColumns = [];
       }
+      t.foreignKeys = await api.foreignKeys($activeConnectionId!, schema, table).catch(() => []);
     }
     // Load column types too — powers the Structure tab AND the row-detail panel.
     await loadColumns(t);
@@ -241,6 +251,8 @@
     if (tab.kind === "table") {
       t = tab;
       t.filters = [];
+      t.sort = null;
+      t.offset = 0;
     } else {
       t = tableTab(schema, table);
       tabs = [...tabs, t];
@@ -251,16 +263,60 @@
     return browseTable(t, schema, table);
   }
 
+  // ── Foreign-key navigation ───────────────────────────────────────────────────
+  function openTableFiltered(schema: string, table: string, column: string, value: string) {
+    const t = tableTab(schema, table);
+    t.filters = [{ column, op: "=", value }];
+    tabs = [...tabs, t];
+    activeId = t.id;
+    sync();
+    browseTable(t, schema, table);
+  }
+  function followFk(e: CustomEvent<{ column: string; value: string }>) {
+    const fk = tab.foreignKeys.find((f) => f.column === e.detail.column);
+    if (!fk || !fk.ref_column) return;
+    openTableFiltered(fk.ref_schema || $activeSchema || "public", fk.ref_table, fk.ref_column, e.detail.value);
+  }
+
   // ── Filters ───────────────────────────────────────────────────────────────
   function applyFilters(e: CustomEvent<import("./lib/types").FilterCond[]>) {
     if (!tab.selected) return;
     tab.filters = e.detail;
+    tab.offset = 0;
     sync();
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
   function clearFilters() {
     if (!tab.selected) return;
     tab.filters = [];
+    tab.offset = 0;
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+
+  // ── Pagination (table tabs) ─────────────────────────────────────────────────
+  function pagePrev() {
+    if (tab.kind !== "table" || !tab.selected || tab.offset === 0) return;
+    tab.offset = Math.max(0, tab.offset - $settings.rowLimit);
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+  function pageNext() {
+    if (tab.kind !== "table" || !tab.selected) return;
+    if ((tab.result?.rows.length ?? 0) < $settings.rowLimit) return; // last page
+    tab.offset += $settings.rowLimit;
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+
+  // ── Sort (table tabs) ───────────────────────────────────────────────────────
+  function toggleSort(col: string) {
+    if (tab.kind !== "table" || !tab.selected) return;
+    const cur = tab.sort;
+    if (!cur || cur.col !== col) tab.sort = { col, dir: "asc" };
+    else if (cur.dir === "asc") tab.sort = { col, dir: "desc" };
+    else tab.sort = null;
+    tab.offset = 0;
     sync();
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
@@ -286,6 +342,7 @@
   }
 
   async function commitEdits(e: CustomEvent<RowEdit[]>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
     const tbl = t.editableTable;
     if (!tbl || !$activeConnectionId || !t.result) return;
@@ -322,14 +379,110 @@
     }
   }
 
+  // ── Export result (CSV / JSON) ──────────────────────────────────────────────
+  async function exportResult(format: "csv" | "json") {
+    const r = tab.result;
+    if (!r || r.columns.length === 0) {
+      showToast(false, "Nothing to export — run a query or open a table first.");
+      return;
+    }
+    const base = tab.selected?.table ?? "result";
+    const path = await save({
+      defaultPath: `${base}.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    });
+    if (!path) return;
+    let content: string;
+    if (format === "json") {
+      content = JSON.stringify(
+        r.rows.map((row) => Object.fromEntries(r.columns.map((c, i) => [c, row[i]]))),
+        null,
+        2,
+      );
+    } else {
+      const esc = (v: unknown) => {
+        const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      content = [r.columns.map(esc).join(","), ...r.rows.map((row) => row.map(esc).join(","))].join("\n");
+    }
+    try {
+      await api.writeTextFile(path, content);
+      showToast(true, `Exported ${r.rows.length} rows to ${path}`);
+    } catch (e) {
+      showToast(false, (e as { message?: string })?.message ?? String(e));
+    }
+  }
+
+  // ── Delete rows ─────────────────────────────────────────────────────────────
+  async function deleteRows(e: CustomEvent<number[]>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
+    const t = tab;
+    const tbl = t.editableTable;
+    if (!tbl || !$activeConnectionId || !t.result) return;
+    const idxs = e.detail;
+    if (!idxs.length) return;
+    const ok = await ask(
+      `Delete ${idxs.length} row${idxs.length === 1 ? "" : "s"} from ${tbl.schema}.${tbl.table}? This cannot be undone.`,
+      { title: "Delete rows", kind: "warning" },
+    );
+    if (!ok) return;
+    const cols = t.result.columns;
+    const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
+    t.running = true; t.error = null; sync();
+    try {
+      for (const i of idxs) {
+        const row = t.result.rows[i];
+        const where = whereCols
+          .map((c) => {
+            const v = row[cols.indexOf(c)];
+            return v === null || v === undefined ? `${qid(c)} IS NULL` : `${qid(c)} = ${lit(v)}`;
+          })
+          .join(" AND ");
+        const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
+        const s = performance.now();
+        await api.executeQuery($activeConnectionId, del);
+        logSql(del, { ms: Math.round(performance.now() - s) });
+      }
+    } catch (err) {
+      t.error = String(err); t.running = false; sync();
+      return;
+    }
+    t.running = false; t.selectedRow = null; sync();
+    await browseTable(t, tbl.schema, tbl.table);
+  }
+
   // ── Insert row ────────────────────────────────────────────────────────────
   function beginInsert() {
     if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) return;
+    insertInitial = null;
+    insertNonce += 1;
+    inserting = true;
+    detailOpen = true;
+  }
+
+  // Duplicate the selected row into a pre-filled insert form (PK columns cleared).
+  function beginDuplicate() {
+    if (tab.kind !== "table" || !tab.selected || tab.selectedRow === null || !tab.result) return;
+    if (tab.columns.length === 0) return;
+    const r = tab.result;
+    const row = r.rows[tab.selectedRow];
+    const init: Record<string, string | null> = {};
+    for (const c of tab.columns) {
+      if (tab.pkColumns.includes(c.name)) continue; // let serial/identity regenerate
+      const i = r.columns.indexOf(c.name);
+      if (i < 0) continue;
+      const v = row[i];
+      init[c.name] = v === null || v === undefined ? null : typeof v === "object" ? JSON.stringify(v) : String(v);
+    }
+    insertInitial = init;
+    insertNonce += 1;
     inserting = true;
     detailOpen = true;
   }
 
   async function insertRow(e: CustomEvent<Record<string, string | null>>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
     const tbl = t.selected;
     if (!tbl || !$activeConnectionId) return;
@@ -389,6 +542,7 @@
     stashCurrent();
     activeConnection.set(config);
     activeConnectionId.set(id);
+    readOnly.set(shouldStartReadOnly(config.color, config.tag));
     freshTabs();
     schemaCatalog.set({});
     addOpen = false;
@@ -402,6 +556,7 @@
     stashCurrent();
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
+    readOnly.set(shouldStartReadOnly(ws.config.color, ws.config.tag));
     restore(id);
     schemaCatalog.set({});
     reloadSidebar();
@@ -417,6 +572,7 @@
       const next = remaining[0];
       activeConnection.set(next.config);
       activeConnectionId.set(next.id);
+      readOnly.set(shouldStartReadOnly(next.config.color, next.config.tag));
       restore(next.id);
       schemaCatalog.set({});
       reloadSidebar();
@@ -447,6 +603,8 @@
       case "new_connection": addOpen = true; break;
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
+      case "export_csv": exportResult("csv"); break;
+      case "export_json": exportResult("json"); break;
       case "export_db": openExport(); break;
       case "import_db": runImport(); break;
       case "refresh": refresh(); break;
@@ -460,6 +618,8 @@
       case "toggle_log": logOpen = !logOpen; break;
       case "commit": grid?.commitStaged(); break;
       case "add_row": beginInsert(); break;
+      case "duplicate_row": beginDuplicate(); break;
+      case "format_sql": if (tab.kind === "query") editor?.format(); break;
       case "prev_tab": cycleTab(-1); break;
       case "next_tab": cycleTab(1); break;
       case "settings": settingsOpen = true; break;
@@ -549,11 +709,13 @@
       {sidebarOpen}
       {logOpen}
       {detailOpen}
+      readOnly={$readOnly}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
+      on:toggleReadOnly={() => readOnly.update((v) => !v)}
     />
     <div class="body" class:collapsed={!sidebarOpen}>
       {#if sidebarOpen}
@@ -571,6 +733,7 @@
         {#if tab.kind === "query"}
           {#key activeId}
             <QueryEditor
+              bind:this={editor}
               running={tab.running}
               dialect={$activeConnection?.kind ?? "postgres"}
               schema={$schemaCatalog}
@@ -600,7 +763,7 @@
 
           {#if tab.view === "data" && tab.filtersOpen}
             <FilterBar
-              columns={tab.result?.columns ?? tab.columns.map((c) => c.name)}
+              columns={tab.result?.columns?.length ? tab.result.columns : tab.columns.map((c) => c.name)}
               filters={tab.filters}
               on:apply={applyFilters}
               on:clear={clearFilters}
@@ -630,9 +793,24 @@
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
+                    sort={tab.sort}
+                    sortable={tab.kind === "table"}
+                    tableKey={tab.selected ? `${tab.selected.schema}.${tab.selected.table}` : ""}
+                    fkColumns={new Set(tab.foreignKeys.map((f) => f.column))}
+                    on:followFk={followFk}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
+                    on:sortColumn={(e) => toggleSort(e.detail)}
+                    on:deleteRows={deleteRows}
                   />
+                  {#if tab.kind === "table" && tab.result}
+                    <div class="page-bar">
+                      <span class="prange">Rows {tab.result.rows.length ? tab.offset + 1 : 0}–{tab.offset + tab.result.rows.length}</span>
+                      <div class="sub-spacer"></div>
+                      <button class="pbtn" disabled={tab.offset === 0 || tab.running} on:click={pagePrev}>‹ Prev</button>
+                      <button class="pbtn" disabled={tab.result.rows.length < $settings.rowLimit || tab.running} on:click={pageNext}>Next ›</button>
+                    </div>
+                  {/if}
                 </div>
                 {#if logOpen}
                   <div class="log-col">
@@ -648,6 +826,8 @@
                     columns={tab.columns}
                     editable={editing}
                     insert={inserting}
+                    initial={insertInitial}
+                    {insertNonce}
                     on:commit={commitEdits}
                     on:insert={insertRow}
                     on:close={() => { detailOpen = false; inserting = false; }}
@@ -735,6 +915,11 @@
   .data-area { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .grid-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .page-bar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); background: var(--bg-panel); border-top: 1px solid var(--hairline); flex: none; }
+  .prange { font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); }
+  .pbtn { height: 24px; padding: 0 var(--s-3); border-radius: var(--r-sm); font-size: 12px; color: var(--ink-soft); border: 1px solid var(--border); background: var(--bg-content); }
+  .pbtn:hover:not(:disabled) { background: var(--bg-elevated); color: var(--ink); }
+  .pbtn:disabled { opacity: 0.4; }
   .log-col { height: 220px; flex: none; display: flex; min-height: 0; }
   .detail-col { width: 320px; flex: none; display: flex; min-height: 0; overflow: hidden; }
 

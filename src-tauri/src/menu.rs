@@ -54,6 +54,9 @@ pub fn build(app: &App) -> tauri::Result<()> {
         )?)
         .item(&item(app, "new_table", "New Table…", None)?)
         .separator()
+        .item(&item(app, "export_csv", "Export Result as CSV…", None)?)
+        .item(&item(app, "export_json", "Export Result as JSON…", None)?)
+        .separator()
         .item(&item(app, "close_tab", "Close Tab", Some("CmdOrCtrl+W"))?)
         .build()?;
 
@@ -68,6 +71,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .separator()
         .item(&item(app, "commit", "Commit Changes", Some("CmdOrCtrl+S"))?)
         .item(&item(app, "add_row", "Add Row", Some("CmdOrCtrl+I"))?)
+        .item(&item(
+            app,
+            "duplicate_row",
+            "Duplicate Row",
+            Some("CmdOrCtrl+D"),
+        )?)
         .build()?;
 
     let view_menu = SubmenuBuilder::new(app, "View")
@@ -108,6 +117,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
         )?)
         .separator()
         .item(&item(app, "run_query", "Run Query", None)?)
+        .item(&item(
+            app,
+            "format_sql",
+            "Format SQL",
+            Some("CmdOrCtrl+Shift+F"),
+        )?)
         .separator()
         .item(&item(app, "export_db", "Export Database…", None)?)
         .item(&item(app, "import_db", "Import / Restore…", None)?)

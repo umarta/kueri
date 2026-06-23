@@ -9,6 +9,7 @@
   import { bracketMatching, indentOnInput } from "@codemirror/language";
   import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
   import { sql, PostgreSQL, MySQL, SQLite, MSSQL, StandardSQL, type SQLDialect } from "@codemirror/lang-sql";
+  import { format as formatSql } from "sql-formatter";
   import { kueriEditorTheme } from "../lib/editor/theme";
   import type { DbKind } from "../lib/types";
 
@@ -45,6 +46,20 @@
     const text = sel.empty ? state.doc.toString() : state.sliceDoc(sel.from, sel.to);
     if (text.trim()) dispatch("run", text);
     return true;
+  }
+
+  /** Format the buffer with sql-formatter (Edit → Format SQL). */
+  export function format() {
+    if (!view) return;
+    const lang = dialect === "mysql" ? "mysql" : dialect === "sqlite" ? "sqlite" : "postgresql";
+    let out: string;
+    try {
+      out = formatSql(view.state.doc.toString(), { language: lang, keywordCase: "upper" });
+    } catch {
+      return; // leave the buffer untouched on parse error
+    }
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+    dispatch("change", out);
   }
 
   onMount(() => {

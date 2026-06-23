@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlRow};
-use sqlx::{Column, Row, ValueRef};
+use sqlx::{Column, Executor, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+};
 use crate::error::AppResult;
 
 pub struct MySqlDriver {
@@ -62,8 +64,9 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), CAST(column_default AS CHAR) \
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), \
+                    CAST(column_default AS CHAR), CAST(column_type AS CHAR) \
              FROM information_schema.columns \
              WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position",
         )
@@ -73,12 +76,15 @@ impl Driver for MySqlDriver {
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default)| ColumnInfo {
-                name,
-                data_type,
-                nullable: is_nullable == "YES",
-                default,
-            })
+            .map(
+                |(name, data_type, is_nullable, default, column_type)| ColumnInfo {
+                    enum_values: parse_enum(&column_type),
+                    name,
+                    data_type,
+                    nullable: is_nullable == "YES",
+                    default,
+                },
+            )
             .collect())
     }
 
@@ -95,12 +101,78 @@ impl Driver for MySqlDriver {
         Ok(rows.into_iter().map(|(name,)| name).collect())
     }
 
+    async fn list_foreign_keys(&self, schema: &str, table: &str) -> AppResult<Vec<ForeignKey>> {
+        let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+            "SELECT CAST(column_name AS CHAR), CAST(referenced_table_schema AS CHAR), \
+                    CAST(referenced_table_name AS CHAR), CAST(referenced_column_name AS CHAR) \
+             FROM information_schema.key_column_usage \
+             WHERE table_schema = ? AND table_name = ? AND referenced_table_name IS NOT NULL",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(column, ref_schema, ref_table, ref_column)| ForeignKey {
+                column,
+                ref_schema,
+                ref_table,
+                ref_column,
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows: Vec<(String, i64, String, i64, String)> = sqlx::query_as(
+            "SELECT CAST(index_name AS CHAR), CAST(non_unique AS SIGNED), \
+                    CAST(column_name AS CHAR), seq_in_index, CAST(index_type AS CHAR) \
+             FROM information_schema.statistics \
+             WHERE table_schema = ? AND table_name = ? \
+             ORDER BY index_name, seq_in_index",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut out: Vec<IndexInfo> = Vec::new();
+        for (name, non_unique, col, _seq, method) in rows {
+            if let Some(ix) = out.iter_mut().find(|i| i.name == name) {
+                ix.columns.push(col);
+            } else {
+                out.push(IndexInfo {
+                    name,
+                    unique: non_unique == 0,
+                    method,
+                    predicate: String::new(),
+                    columns: vec![col],
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn table_ddl(&self, schema: &str, table: &str) -> AppResult<String> {
+        let q = format!(
+            "SHOW CREATE TABLE `{}`.`{}`",
+            schema.replace('`', "``"),
+            table.replace('`', "``")
+        );
+        // Returns (Table, Create Table).
+        let row: (String, String) = sqlx::query_as(&q).fetch_one(&self.pool).await?;
+        Ok(format!("{};", row.1))
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = rows
-            .first()
-            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-            .unwrap_or_default();
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            match (&self.pool).describe(sql).await {
+                Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
+                Err(_) => Vec::new(),
+            }
+        };
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut rec = Vec::with_capacity(row.columns().len());
@@ -122,6 +194,43 @@ impl Driver for MySqlDriver {
     }
 }
 
+/// Parse the values out of a MySQL `enum('a','b',...)` / `set('a','b')` column type.
+fn parse_enum(column_type: &str) -> Vec<String> {
+    let lower = column_type.to_ascii_lowercase();
+    if !(lower.starts_with("enum(") || lower.starts_with("set(")) {
+        return vec![];
+    }
+    let Some(open) = column_type.find('(') else {
+        return vec![];
+    };
+    let close = column_type.rfind(')').unwrap_or(column_type.len());
+    let inner = &column_type[open + 1..close];
+    let mut out = Vec::new();
+    let mut chars = inner.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c == '\'' {
+            chars.next();
+            let mut s = String::new();
+            while let Some(ch) = chars.next() {
+                if ch == '\'' {
+                    if chars.peek() == Some(&'\'') {
+                        s.push('\'');
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                } else {
+                    s.push(ch);
+                }
+            }
+            out.push(s);
+        } else {
+            chars.next();
+        }
+    }
+    out
+}
+
 /// Best-effort decode by trying common types in order.
 fn decode(row: &MySqlRow, idx: usize) -> Value {
     if let Ok(raw) = row.try_get_raw(idx) {
@@ -132,6 +241,14 @@ fn decode(row: &MySqlRow, idx: usize) -> Value {
     if let Ok(v) = row.try_get::<i64, _>(idx) {
         // Beyond JS's safe integer range, emit as a string to keep full precision.
         if v.abs() > 9_007_199_254_740_991 {
+            return Value::String(v.to_string());
+        }
+        return Value::from(v);
+    }
+    // Unsigned integers (e.g. `bigint unsigned`) don't fit i64; try u64 BEFORE bool,
+    // otherwise sqlx happily decodes any integer as a bool (non-zero → true).
+    if let Ok(v) = row.try_get::<u64, _>(idx) {
+        if v > 9_007_199_254_740_991 {
             return Value::String(v.to_string());
         }
         return Value::from(v);

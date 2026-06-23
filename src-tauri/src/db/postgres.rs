@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::{Column, Row, TypeInfo, ValueRef};
+use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+};
 use crate::error::AppResult;
 
 pub struct PgDriver {
@@ -58,8 +60,8 @@ impl Driver for PgDriver {
     }
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
-        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT column_name, data_type, is_nullable, column_default \
+        let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT column_name, data_type, is_nullable, column_default, udt_name \
              FROM information_schema.columns \
              WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
         )
@@ -67,13 +69,37 @@ impl Driver for PgDriver {
         .bind(table)
         .fetch_all(&self.pool)
         .await?;
+        // Enum types → their labels (in sort order), keyed by type name.
+        let enum_rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT t.typname, e.enumlabel FROM pg_type t \
+             JOIN pg_enum e ON e.enumtypid = t.oid ORDER BY e.enumsortorder",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+        let mut enums: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for (t, l) in enum_rows {
+            enums.entry(t).or_default().push(l);
+        }
         Ok(rows
             .into_iter()
-            .map(|(name, data_type, is_nullable, default)| ColumnInfo {
-                name,
-                data_type,
-                nullable: is_nullable == "YES",
-                default,
+            .map(|(name, data_type, is_nullable, default, udt_name)| {
+                // For enums, information_schema reports "USER-DEFINED"; show the type
+                // name instead and attach its values.
+                let enum_values = enums.get(&udt_name).cloned().unwrap_or_default();
+                let data_type = if data_type == "USER-DEFINED" {
+                    udt_name
+                } else {
+                    data_type
+                };
+                ColumnInfo {
+                    name,
+                    data_type,
+                    nullable: is_nullable == "YES",
+                    default,
+                    enum_values,
+                }
             })
             .collect())
     }
@@ -96,12 +122,76 @@ impl Driver for PgDriver {
         Ok(rows.into_iter().map(|(name,)| name).collect())
     }
 
+    async fn list_foreign_keys(&self, schema: &str, table: &str) -> AppResult<Vec<ForeignKey>> {
+        let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+            "SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name \
+             FROM information_schema.table_constraints tc \
+             JOIN information_schema.key_column_usage kcu \
+               ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema \
+             JOIN information_schema.constraint_column_usage ccu \
+               ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema \
+             WHERE tc.constraint_type = 'FOREIGN KEY' \
+               AND tc.table_schema = $1 AND tc.table_name = $2",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(column, ref_schema, ref_table, ref_column)| ForeignKey {
+                column,
+                ref_schema,
+                ref_table,
+                ref_column,
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows: Vec<(String, bool, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT i.relname, ix.indisunique, am.amname, \
+                    pg_get_expr(ix.indpred, ix.indrelid), \
+                    array_to_string(array_agg(a.attname ORDER BY x.ord), ',') \
+             FROM pg_index ix \
+             JOIN pg_class i ON i.oid = ix.indexrelid \
+             JOIN pg_am am ON am.oid = i.relam \
+             JOIN pg_class t ON t.oid = ix.indrelid \
+             JOIN pg_namespace n ON n.oid = t.relnamespace \
+             JOIN unnest(ix.indkey) WITH ORDINALITY AS x(attnum, ord) ON true \
+             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum \
+             WHERE n.nspname = $1 AND t.relname = $2 \
+             GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid \
+             ORDER BY i.relname",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, unique, method, predicate, cols)| IndexInfo {
+                name,
+                unique,
+                method,
+                predicate: predicate.unwrap_or_default(),
+                columns: cols.split(',').map(|s| s.to_string()).collect(),
+            })
+            .collect())
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = rows
-            .first()
-            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-            .unwrap_or_default();
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            // Empty result: pull column names from the prepared statement so the
+            // grid still shows headers and the filter bar keeps its column list.
+            match (&self.pool).describe(sql).await {
+                Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
+                Err(_) => Vec::new(),
+            }
+        };
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut rec = Vec::with_capacity(row.columns().len());

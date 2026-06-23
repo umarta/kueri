@@ -16,6 +16,10 @@ export interface ConnectionConfig {
   user: string;
   password: string;
   ssl: boolean;
+  ssl_mode?: string | null;
+  ssl_ca?: string | null;
+  ssl_cert?: string | null;
+  ssl_key?: string | null;
   file_path?: string | null;
   // UI-only metadata (ignored by the Rust backend — serde drops unknown fields).
   // `tag` is the environment label, `color` is its status-dot token name.
@@ -48,6 +52,7 @@ export interface ColumnInfo {
   data_type: string;
   nullable: boolean;
   default: string | null;
+  enum_values?: string[];
 }
 
 export interface QueryResult {
@@ -74,6 +79,26 @@ export interface QueryTab {
   filters: FilterCond[];
   filtersOpen: boolean;
   selectedRow: number | null;
+  sort: { col: string; dir: "asc" | "desc" } | null;
+  offset: number;
+  foreignKeys: ForeignKey[];
+}
+
+/** A foreign-key edge: `column` → `ref_schema.ref_table.ref_column`. */
+export interface ForeignKey {
+  column: string;
+  ref_schema: string;
+  ref_table: string;
+  ref_column: string;
+}
+
+/** An index on a table. */
+export interface IndexInfo {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  method: string;
+  predicate: string;
 }
 
 /** A single filter condition in the filter bar. */
