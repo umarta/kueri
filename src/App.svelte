@@ -438,35 +438,77 @@
   }
 
   // ── Export result (CSV / JSON) ──────────────────────────────────────────────
-  async function exportResult(format: "csv" | "json") {
-    const r = tab.result;
-    if (!r || r.columns.length === 0) {
-      showToast(false, "Nothing to export — run a query or open a table first.");
-      return;
+  // Build CSV / JSON / SQL-INSERT text for a set of rows.
+  function buildExport(format: string, columns: string[], rows: unknown[][], sqlTable: string): string {
+    if (format === "json") {
+      return JSON.stringify(rows.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]]))), null, 2);
     }
-    const base = tab.selected?.table ?? "result";
+    if (format === "sql") {
+      const cols = columns.map(qid).join(", ");
+      return rows
+        .map((row) => `INSERT INTO ${sqlTable} (${cols}) VALUES (${row.map((v) => (v === null || v === undefined ? "NULL" : lit(typeof v === "object" ? JSON.stringify(v) : v))).join(", ")});`)
+        .join("\n");
+    }
+    const esc = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    return [columns.map(esc).join(","), ...rows.map((row) => row.map(esc).join(","))].join("\n");
+  }
+
+  // Export the current result (whole=false) or the whole table (whole=true).
+  // Format follows the chosen file extension (.csv / .json / .sql).
+  async function doExport(whole: boolean) {
+    if (!$activeConnectionId) return;
+    let columns: string[];
+    let rows: unknown[][];
+    let base: string;
+    let sqlTable: string;
+    if (whole) {
+      if (tab.kind !== "table" || !tab.selected) {
+        showToast(false, "Open a table to export all of its rows.");
+        return;
+      }
+      const { schema, table } = tab.selected;
+      base = table;
+      sqlTable = qtable(schema, table);
+      try {
+        const r = await api.executeQuery($activeConnectionId, `SELECT * FROM ${sqlTable};`, tab.id);
+        columns = r.columns;
+        rows = r.rows;
+      } catch (e) {
+        showToast(false, (e as { message?: string })?.message ?? String(e));
+        return;
+      }
+    } else {
+      const r = tab.result;
+      if (!r || r.columns.length === 0) {
+        showToast(false, "Nothing to export — run a query or open a table first.");
+        return;
+      }
+      columns = r.columns;
+      rows = r.rows;
+      base = tab.selected?.table ?? "result";
+      sqlTable = tab.selected
+        ? qtable(tab.selected.schema, tab.selected.table)
+        : tab.editableTable
+          ? qtable(tab.editableTable.schema, tab.editableTable.table)
+          : qid("exported_table");
+    }
     const path = await save({
-      defaultPath: `${base}.${format}`,
-      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      defaultPath: `${base}.csv`,
+      filters: [
+        { name: "CSV", extensions: ["csv"] },
+        { name: "JSON", extensions: ["json"] },
+        { name: "SQL", extensions: ["sql"] },
+      ],
     });
     if (!path) return;
-    let content: string;
-    if (format === "json") {
-      content = JSON.stringify(
-        r.rows.map((row) => Object.fromEntries(r.columns.map((c, i) => [c, row[i]]))),
-        null,
-        2,
-      );
-    } else {
-      const esc = (v: unknown) => {
-        const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
-        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      };
-      content = [r.columns.map(esc).join(","), ...r.rows.map((row) => row.map(esc).join(","))].join("\n");
-    }
+    const ext = path.split(".").pop()?.toLowerCase();
+    const format = ext === "json" ? "json" : ext === "sql" ? "sql" : "csv";
     try {
-      await api.writeTextFile(path, content);
-      showToast(true, `Exported ${r.rows.length} rows to ${path}`);
+      await api.writeTextFile(path, buildExport(format, columns, rows, sqlTable));
+      showToast(true, `Exported ${rows.length} row${rows.length === 1 ? "" : "s"} to ${path}`);
     } catch (e) {
       showToast(false, (e as { message?: string })?.message ?? String(e));
     }
@@ -662,8 +704,8 @@
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
       case "cancel_query": cancelActive(); break;
-      case "export_csv": exportResult("csv"); break;
-      case "export_json": exportResult("json"); break;
+      case "export_result": doExport(false); break;
+      case "export_table": doExport(true); break;
       case "import_csv": openCsvImport(); break;
       case "export_db": openExport(); break;
       case "import_db": runImport(); break;
