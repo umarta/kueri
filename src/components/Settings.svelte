@@ -60,6 +60,10 @@
           </select>
         </div>
         <div class="row">
+          <div class="lbl"><span class="name">Client tools folder</span><span class="desc">Folder with pg_dump/mysqldump etc. Set this if your PATH copy is older than the server.</span></div>
+          <input class="num wide" value={$settings.toolsPath} placeholder="/opt/homebrew/opt/postgresql@17/bin" on:change={(e) => settings.update((s) => ({ ...s, toolsPath: e.currentTarget.value.trim() }))} />
+        </div>
+        <div class="row">
           <div class="lbl"><span class="name">Default row limit</span><span class="desc">Rows fetched when browsing a table.</span></div>
           <input class="num" type="number" min="1" value={$settings.rowLimit} on:change={(e) => setLimit(e.currentTarget.value)} />
         </div>
@@ -105,6 +109,7 @@
   .desc { font-size: 11.5px; color: var(--muted); }
   .num { width: 96px; height: 30px; padding: 0 var(--s-3); background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 13px; text-align: right; }
   .num:focus { outline: none; border-color: var(--accent); }
+  .num.wide { width: 260px; text-align: left; font-family: var(--font-mono); font-size: 12px; }
   .switch input { width: 16px; height: 16px; accent-color: var(--accent); }
 
   .keys { list-style: none; margin: 0; padding: 0; }

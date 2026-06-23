@@ -67,10 +67,10 @@ export const api = {
     invoke<void>("set_column_nullable", { id, schema, table, column, currentType, notNull }),
 
   // PostgreSQL backup & restore (shells out to pg_dump / pg_restore / psql).
-  pgExport: (cfg: ConnectionConfig, path: string, format: string, contents: string) =>
-    invoke<string>("pg_export", { cfg, path, format, contents }),
-  pgImport: (cfg: ConnectionConfig, path: string) =>
-    invoke<string>("pg_import", { cfg, path }),
+  pgExport: (cfg: ConnectionConfig, path: string, format: string, contents: string, tools: string) =>
+    invoke<string>("pg_export", { cfg, path, format, contents, tools }),
+  pgImport: (cfg: ConnectionConfig, path: string, tools: string) =>
+    invoke<string>("pg_import", { cfg, path, tools }),
 
   // Write a text file (CSV/JSON export; path comes from a save dialog).
   writeTextFile: (path: string, content: string) =>

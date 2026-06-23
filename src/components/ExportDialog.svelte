@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import { save } from "@tauri-apps/plugin-dialog";
   import { api } from "../lib/tauri";
+  import { settings } from "../lib/stores/settings";
   import type { ConnectionConfig } from "../lib/types";
 
   export let cfg: ConnectionConfig;
@@ -28,7 +29,7 @@
     if (!path) return; // cancelled
     busy = true;
     try {
-      const msg = await api.pgExport(cfg, path, format, contents);
+      const msg = await api.pgExport(cfg, path, format, contents, $settings.toolsPath);
       result = { ok: true, msg: `${msg}\nSaved to ${path}` };
     } catch (e) {
       result = { ok: false, msg: (e as { message?: string })?.message ?? String(e) };
@@ -48,7 +49,7 @@
 
     <div class="body">
       {#if isPg}
-        <div class="field">
+        <div class="ed-field">
           <span class="lbl">Format</span>
           <div class="seg">
             <button class:active={format === "plain"} on:click={() => (format = "plain")}>Plain SQL (.sql)</button>
@@ -57,7 +58,7 @@
         </div>
       {/if}
       {#if !isSqlite}
-        <div class="field">
+        <div class="ed-field">
           <span class="lbl">Contents</span>
           <div class="seg">
             <button class:active={contents === "all"} on:click={() => (contents = "all")}>Schema + data</button>
@@ -92,7 +93,7 @@
   .db { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
 
   .body { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); }
-  .field { display: flex; flex-direction: column; gap: var(--s-2); }
+  .ed-field { display: flex; flex-direction: column; gap: var(--s-2); }
   .lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .seg { display: flex; gap: var(--s-2); flex-wrap: wrap; }
   .seg button { height: 30px; padding: 0 var(--s-4); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; color: var(--ink-soft); background: var(--bg-content); border: 1px solid var(--border); }
