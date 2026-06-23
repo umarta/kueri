@@ -118,6 +118,7 @@
     editing = null;
     selected = new Set();
     anchor = -1;
+    active = null;
   }
   $: pending = Object.keys(edits);
 
@@ -133,14 +134,15 @@
   const display = (r: number, c: number, raw: unknown) =>
     key(r, c) in edits ? edits[key(r, c)] : fmt(raw);
 
-  async function startEdit(r: number, c: number, raw: unknown) {
+  async function startEdit(r: number, c: number, raw: unknown, seed?: string) {
     if (!editable) return;
     editing = { r, c };
     const k = key(r, c);
-    draft = k in edits ? edits[k] : isNull(raw) ? "" : fmt(raw);
+    draft = seed !== undefined ? seed : k in edits ? edits[k] : isNull(raw) ? "" : fmt(raw);
     await tick();
     input?.focus();
-    input?.select();
+    if (seed === undefined) input?.select();
+    else input?.setSelectionRange(draft.length, draft.length);
   }
 
   function commitCell() {
@@ -156,11 +158,61 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === "Enter") { e.preventDefault(); commitCell(); }
-    else if (e.key === "Escape") { e.preventDefault(); editing = null; }
+    if (e.key === "Enter") { e.preventDefault(); commitCell(); moveActive(1, 0); refocusGrid(); }
+    else if (e.key === "Escape") { e.preventDefault(); editing = null; refocusGrid(); }
+    else if (e.key === "Tab") { e.preventDefault(); commitCell(); moveActive(0, e.shiftKey ? -1 : 1); refocusGrid(); }
   }
 
   function discard() { edits = {}; editing = null; }
+
+  // ── Keyboard navigation (active cell) ────────────────────────────────────────
+  let active: { r: number; vc: number } | null = null;
+
+  function refocusGrid() { scrollEl?.focus(); }
+  function ensureVisible(r: number) {
+    try { $virtualizer.scrollToIndex(r); } catch { /* not ready */ }
+  }
+  function moveActive(dr: number, dc: number) {
+    if (!result || !visible.length) return;
+    const maxR = result.rows.length - 1;
+    const maxC = visible.length - 1;
+    const cur = active ?? { r: 0, vc: 0 };
+    let r = cur.r + dr;
+    let vc = cur.vc + dc;
+    if (vc > maxC) { vc = 0; r += 1; }
+    if (vc < 0) { vc = maxC; r -= 1; }
+    active = { r: Math.max(0, Math.min(maxR, r)), vc: Math.max(0, Math.min(maxC, vc)) };
+    ensureVisible(active.r);
+  }
+  function startEditActive(seed?: string) {
+    if (!active || !result || !editable) return;
+    const ci = visible[active.vc].i;
+    startEdit(active.r, ci, result.rows[active.r][ci], seed);
+  }
+  async function copyActive() {
+    if (!active || !result) return;
+    const ci = visible[active.vc].i;
+    try { await navigator.clipboard.writeText(fmt(result.rows[active.r][ci])); } catch { /* unavailable */ }
+  }
+  function onGridKey(e: KeyboardEvent) {
+    if (editing || !result || !visible.length) return;
+    const k = e.key;
+    const printable = k.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
+    const isCopy = (e.metaKey || e.ctrlKey) && k.toLowerCase() === "c";
+    const nav = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"];
+    if (!nav.includes(k) && !isCopy && !(printable && editable)) return;
+    e.preventDefault();
+    if (k === "Escape") { active = null; return; }
+    if (!active) { active = { r: 0, vc: 0 }; if (k !== "Enter" && !printable) return; }
+    if (k === "ArrowDown") moveActive(1, 0);
+    else if (k === "ArrowUp") moveActive(-1, 0);
+    else if (k === "ArrowRight") moveActive(0, 1);
+    else if (k === "ArrowLeft") moveActive(0, -1);
+    else if (k === "Tab") moveActive(0, e.shiftKey ? -1 : 1);
+    else if (k === "Enter") startEditActive();
+    else if (isCopy) copyActive();
+    else if (printable) startEditActive(k);
+  }
 
   /** Commit edits (⌘S). Flush the cell being edited first so a typed-but-not-
    *  Entered value is included; then push staged edits. No-op if nothing changed. */
@@ -280,7 +332,8 @@
     </div>
   {/if}
 
-  <div class="wrap" bind:this={scrollEl}>
+  <!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-static-element-interactions -->
+  <div class="wrap" bind:this={scrollEl} tabindex="0" on:keydown={onGridKey}>
     <div class="surface" role="grid" aria-rowcount={result.row_count} style="width: {totalWidth}px">
       <div class="head" role="row" style="grid-template-columns: {template}">
         <div class="hcell gutter" role="columnheader"></div>
@@ -311,7 +364,7 @@
               style="transform: translateY({vrow.start}px); height: {ROW_H}px; grid-template-columns: {template}"
             >
               <div class="cell gutter" role="gridcell">{i + 1}</div>
-              {#each visible as v (v.name)}
+              {#each visible as v, vc (v.name)}
                 {@const j = v.i}
                 {@const cell = result.rows[i][j]}
                 <div
@@ -321,8 +374,10 @@
                   class:null={isNull(cell) && !isEdited(i, j)}
                   class:edited={isEdited(i, j)}
                   class:active={editing?.r === i && editing?.c === j}
+                  class:active-cell={active?.r === i && active?.vc === vc}
                   class:can-edit={editable}
                   title={display(i, j, cell)}
+                  on:click={() => (active = { r: i, vc })}
                   on:dblclick={() => startEdit(i, j, cell)}
                   on:keydown={(e) => { if (editable && (e.key === "Enter" || e.key === "F2")) { e.preventDefault(); startEdit(i, j, cell); } }}
                 >
@@ -429,6 +484,8 @@
   .col-item input { accent-color: var(--accent); }
 
   .wrap { flex: 1; overflow: auto; background: var(--bg-content); position: relative; }
+  .wrap:focus { outline: none; }
+  .cell.active-cell { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 1px; }
   .surface { min-width: 100%; }
 
   /* Header — sticky to the top of the scroll container */
