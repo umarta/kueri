@@ -149,8 +149,24 @@ pub async fn execute_query(
     state: State<'_, AppState>,
     id: String,
     sql: String,
+    query_id: String,
 ) -> AppResult<QueryResult> {
-    state.get(&id)?.run_query(&sql).await
+    let driver = state.get(&id)?;
+    // Run on a task we can abort, so `cancel_query` can stop a long-running query.
+    let task = tokio::spawn(async move { driver.run_query(&sql).await });
+    state.register_query(query_id.clone(), task.abort_handle());
+    let res = task.await;
+    state.finish_query(&query_id);
+    match res {
+        Ok(inner) => inner,
+        Err(e) if e.is_cancelled() => Err(AppError::Other("Query cancelled.".into())),
+        Err(e) => Err(AppError::Other(format!("query task failed: {e}"))),
+    }
+}
+
+#[tauri::command]
+pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
+    state.cancel(&query_id);
 }
 
 // ── DDL commands (database-agnostic; the driver renders the right SQL) ─────────

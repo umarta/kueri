@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tokio::task::AbortHandle;
+
 use crate::db::driver::Driver;
 use crate::error::{AppError, AppResult};
 
@@ -9,9 +11,23 @@ use crate::error::{AppError, AppResult};
 #[derive(Default)]
 pub struct AppState {
     pub conns: Mutex<HashMap<String, Arc<dyn Driver>>>,
+    /// In-flight queries by id, so a running query can be cancelled.
+    pub running: Mutex<HashMap<String, AbortHandle>>,
 }
 
 impl AppState {
+    pub fn register_query(&self, query_id: String, handle: AbortHandle) {
+        self.running.lock().unwrap().insert(query_id, handle);
+    }
+    pub fn finish_query(&self, query_id: &str) {
+        self.running.lock().unwrap().remove(query_id);
+    }
+    pub fn cancel(&self, query_id: &str) {
+        if let Some(h) = self.running.lock().unwrap().remove(query_id) {
+            h.abort();
+        }
+    }
+
     pub fn get(&self, id: &str) -> AppResult<Arc<dyn Driver>> {
         self.conns
             .lock()

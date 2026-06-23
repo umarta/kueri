@@ -76,6 +76,11 @@
     }
   }
 
+  // Cancel the active tab's in-flight query (the backend aborts the task).
+  function cancelActive() {
+    if (tab.running) api.cancelQuery(tab.id).catch(() => {});
+  }
+
   // ── Query tabs ──────────────────────────────────────────────────────────────
   let seq = 1;
   function blankQueryTab(): QueryTab {
@@ -120,7 +125,7 @@
     t.running = true; t.error = null; sync();
     const start = performance.now();
     try {
-      t.result = await api.executeQuery($activeConnectionId, sql);
+      t.result = await api.executeQuery($activeConnectionId, sql, t.id);
       logSql(sql, { ms: Math.round(performance.now() - start) });
     } catch (e) {
       t.error = String(e); t.result = null;
@@ -362,7 +367,7 @@
           .join(" AND ");
         const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
         const us = performance.now();
-        await api.executeQuery($activeConnectionId, upd);
+        await api.executeQuery($activeConnectionId, upd, t.id);
         logSql(upd, { ms: Math.round(performance.now() - us) });
       }
     } catch (err) {
@@ -441,7 +446,7 @@
           .join(" AND ");
         const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
         const s = performance.now();
-        await api.executeQuery($activeConnectionId, del);
+        await api.executeQuery($activeConnectionId, del, t.id);
         logSql(del, { ms: Math.round(performance.now() - s) });
       }
     } catch (err) {
@@ -498,7 +503,7 @@
     t.running = true; t.error = null; sync();
     const start = performance.now();
     try {
-      await api.executeQuery($activeConnectionId, sql);
+      await api.executeQuery($activeConnectionId, sql, t.id);
       logSql(sql, { ms: Math.round(performance.now() - start) });
     } catch (err) {
       t.error = String(err); t.running = false; sync();
@@ -603,6 +608,7 @@
       case "new_connection": addOpen = true; break;
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
+      case "cancel_query": cancelActive(); break;
       case "export_csv": exportResult("csv"); break;
       case "export_json": exportResult("json"); break;
       case "export_db": openExport(); break;
@@ -748,6 +754,11 @@
             <button class="tab" class:active={tab.view === "structure"} on:click={() => setView("structure")}>Structure</button>
             {#if tab.selected}<span class="cur">{tab.selected.schema}.{tab.selected.table}</span>{/if}
             <div class="sub-spacer"></div>
+            {#if tab.running}
+              <button class="tab cancel-run" on:click={cancelActive} title="Cancel query (⌘.)">
+                <span class="run-dot"></span> Cancel
+              </button>
+            {/if}
             {#if tab.view === "data"}
               {#if editing}
                 <button class="tab addrow" on:click={beginInsert} title="Insert a new row">
@@ -912,6 +923,11 @@
 
   .result { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .sub-spacer { flex: 1; }
+  .cancel-run { color: var(--danger) !important; display: inline-flex; align-items: center; gap: var(--s-2); }
+  .cancel-run:hover { background: var(--danger-soft) !important; }
+  .run-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); animation: runpulse 1s var(--ease-out) infinite; }
+  @keyframes runpulse { 50% { opacity: 0.3; } }
+  @media (prefers-reduced-motion: reduce) { .run-dot { animation: none; } }
   .data-area { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .grid-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }

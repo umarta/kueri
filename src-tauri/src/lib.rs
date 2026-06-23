@@ -30,6 +30,7 @@ pub fn run() {
             commands::add_foreign_key,
             commands::primary_keys,
             commands::execute_query,
+            commands::cancel_query,
             commands::create_table,
             commands::drop_table,
             commands::rename_table,
