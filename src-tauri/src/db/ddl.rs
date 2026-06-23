@@ -217,3 +217,38 @@ pub fn set_column_nullable(
         }
     }
 }
+
+pub fn create_index(
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    name: &str,
+    columns: &[String],
+    unique: bool,
+) -> String {
+    let u = if unique { "UNIQUE " } else { "" };
+    let cols = columns
+        .iter()
+        .map(|c| ident(d, c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "CREATE {u}INDEX {} ON {} ({cols});",
+        ident(d, name),
+        qualify(d, schema, table)
+    )
+}
+
+pub fn drop_index(d: Dialect, schema: &str, table: &str, name: &str) -> String {
+    match d {
+        // MySQL indexes are scoped to their table.
+        Dialect::MySql => format!(
+            "DROP INDEX {} ON {};",
+            ident(d, name),
+            qualify(d, schema, table)
+        ),
+        Dialect::Sqlite => format!("DROP INDEX {};", ident(d, name)),
+        // Postgres/SQL Server: the index lives in the table's schema.
+        _ => format!("DROP INDEX {}.{};", ident(d, schema), ident(d, name)),
+    }
+}

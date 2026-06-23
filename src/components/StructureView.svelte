@@ -3,7 +3,7 @@
   import { api } from "../lib/tauri";
   import { typeOptions, alterTypeOptions, supportsColumnAlter, type ColumnDraft } from "../lib/ddl";
   import { readOnly } from "../lib/stores/connection";
-  import type { ColumnInfo, DbKind } from "../lib/types";
+  import type { ColumnInfo, DbKind, IndexInfo, ForeignKey } from "../lib/types";
 
   export let columns: ColumnInfo[] = [];
   export let schema = "";
@@ -53,6 +53,46 @@
     } catch {
       /* clipboard unavailable */
     }
+  }
+
+  // Indexes + foreign keys
+  let indexes: IndexInfo[] = [];
+  let fks: ForeignKey[] = [];
+  let metaKey = "";
+  $: if (connectionId && table && `${schema}.${table}` !== metaKey) {
+    metaKey = `${schema}.${table}`;
+    loadMeta();
+  }
+  async function loadMeta() {
+    if (!connectionId || !table) {
+      indexes = [];
+      fks = [];
+      return;
+    }
+    indexes = await api.listIndexes(connectionId, schema, table).catch(() => []);
+    fks = await api.foreignKeys(connectionId, schema, table).catch(() => []);
+  }
+
+  let addingIdx = false;
+  let idxName = "";
+  let idxCols: string[] = [];
+  let idxUnique = false;
+  function startAddIdx() {
+    addingIdx = true;
+    idxName = "";
+    idxCols = [];
+    idxUnique = false;
+  }
+  async function saveIdx() {
+    if (!connectionId || !idxName.trim() || !idxCols.length) return;
+    if (await run(() => api.createIndex(connectionId!, schema, table, idxName.trim(), idxCols, idxUnique))) {
+      addingIdx = false;
+      await loadMeta();
+      dispatch("changed");
+    }
+  }
+  async function dropIdx(name: string) {
+    if (await run(() => api.dropIndex(connectionId!, schema, table, name))) await loadMeta();
   }
 
   $: canEdit = !!(connectionId && schema && table) && !$readOnly;
@@ -235,6 +275,54 @@
       </tbody>
     </table>
   </div>
+
+  {#if table}
+    <div class="idx-section">
+      <div class="idx-head">
+        <span>Indexes</span>
+        {#if canEdit && !addingIdx}<button class="idx-add" on:click={startAddIdx}>+ Index</button>{/if}
+      </div>
+
+      {#if addingIdx}
+        <div class="idx-form">
+          <input class="idx-input" bind:value={idxName} placeholder="index name" spellcheck="false" />
+          <div class="idx-pick">
+            {#each columns as c (c.name)}
+              <label class="idx-chk"><input type="checkbox" bind:group={idxCols} value={c.name} />{c.name}</label>
+            {/each}
+          </div>
+          <label class="idx-chk"><input type="checkbox" bind:checked={idxUnique} /> Unique</label>
+          <div class="idx-actions">
+            <button class="idx-cancel" on:click={() => (addingIdx = false)} disabled={busy}>Cancel</button>
+            <button class="idx-save" on:click={saveIdx} disabled={busy || !idxName.trim() || !idxCols.length}>Create</button>
+          </div>
+        </div>
+      {/if}
+
+      {#each indexes as ix (ix.name)}
+        <div class="idx-row">
+          <span class="idx-name">{ix.name}</span>
+          {#if ix.unique}<span class="idx-badge">UNIQUE</span>{/if}
+          <span class="idx-colz">{ix.columns.join(", ")}</span>
+          {#if canEdit}<button class="idx-drop" title="Drop index" on:click={() => dropIdx(ix.name)} disabled={busy}>Drop</button>{/if}
+        </div>
+      {/each}
+      {#if !indexes.length}<div class="idx-empty">No indexes</div>{/if}
+    </div>
+
+    {#if fks.length}
+      <div class="idx-section">
+        <div class="idx-head"><span>Foreign keys</span></div>
+        {#each fks as fk (fk.column + fk.ref_table)}
+          <div class="idx-row">
+            <span class="idx-name">{fk.column}</span>
+            <span class="idx-arrow">→</span>
+            <span class="idx-colz">{fk.ref_table}.{fk.ref_column}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  {/if}
 {:else}
   <div class="empty">Select a table to inspect its structure.</div>
 {/if}
@@ -271,6 +359,30 @@
   .ddl-copy:disabled { opacity: 0.4; }
   .ddl-loading { padding: var(--s-3) var(--s-5); font-size: 12px; color: var(--muted); }
   .ddl-code { margin: 0; padding: var(--s-3) var(--s-5); max-height: 280px; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--ink-soft); white-space: pre; }
+
+  .idx-section { border-top: 1px solid var(--hairline); padding: var(--s-3) var(--s-5); }
+  .idx-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--s-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); }
+  .idx-add { font-size: 11.5px; font-weight: 600; color: var(--accent); padding: 2px var(--s-2); border-radius: var(--r-xs); }
+  .idx-add:hover { background: var(--bg-elevated); }
+  .idx-row { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; font-size: 12.5px; }
+  .idx-name { font-family: var(--font-mono); color: var(--ink-soft); }
+  .idx-badge { font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r-pill); padding: 0 5px; }
+  .idx-arrow { color: var(--faint); }
+  .idx-colz { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+  .idx-drop { margin-left: auto; font-size: 11.5px; color: var(--danger); padding: 2px var(--s-2); border-radius: var(--r-xs); }
+  .idx-drop:hover:not(:disabled) { background: var(--danger-soft); }
+  .idx-empty { font-size: 12px; color: var(--faint); padding: var(--s-2) 0; }
+  .idx-form { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); margin-bottom: var(--s-2); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-sm); }
+  .idx-input { height: 28px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 var(--s-2); }
+  .idx-input:focus { outline: none; border-color: var(--accent); }
+  .idx-pick { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-3); }
+  .idx-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink-soft); font-family: var(--font-mono); }
+  .idx-chk input { accent-color: var(--accent); }
+  .idx-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
+  .idx-cancel { font-size: 12px; color: var(--muted); padding: var(--s-1) var(--s-3); border-radius: var(--r-sm); }
+  .idx-cancel:hover:not(:disabled) { background: var(--bg-elevated); }
+  .idx-save { font-size: 12px; font-weight: 600; color: #fff; background: var(--accent); padding: var(--s-1) var(--s-3); border-radius: var(--r-sm); }
+  .idx-save:disabled { opacity: 0.5; }
 
   .err { padding: var(--s-2) var(--s-5); background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent); color: var(--danger, #e5484d); font-size: 11.5px; border-bottom: 1px solid var(--hairline); white-space: pre-wrap; }
   .err.inline { padding: 0; background: none; border: none; margin: var(--s-3) 0 0; }

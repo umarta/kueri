@@ -40,6 +40,14 @@ pub struct ForeignKey {
     pub ref_column: String,
 }
 
+/// An index on a table.
+#[derive(Serialize)]
+pub struct IndexInfo {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+}
+
 /// Every relational backend implements this. The UI and Tauri commands only
 /// ever talk to `dyn Driver`, never to a concrete database. This is what keeps
 /// the app simple while supporting many databases.
@@ -58,6 +66,35 @@ pub trait Driver: Send + Sync {
     /// metadata); the relational drivers override it.
     async fn list_foreign_keys(&self, _schema: &str, _table: &str) -> AppResult<Vec<ForeignKey>> {
         Ok(vec![])
+    }
+
+    /// Indexes on a table. Default empty; relational drivers override it.
+    async fn list_indexes(&self, _schema: &str, _table: &str) -> AppResult<Vec<IndexInfo>> {
+        Ok(vec![])
+    }
+    async fn create_index(
+        &self,
+        schema: &str,
+        table: &str,
+        name: &str,
+        columns: &[String],
+        unique: bool,
+    ) -> AppResult<()> {
+        self.run_query(&ddl::create_index(
+            self.dialect(),
+            schema,
+            table,
+            name,
+            columns,
+            unique,
+        ))
+        .await?;
+        Ok(())
+    }
+    async fn drop_index(&self, schema: &str, table: &str, name: &str) -> AppResult<()> {
+        self.run_query(&ddl::drop_index(self.dialect(), schema, table, name))
+            .await?;
+        Ok(())
     }
 
     // ── DDL ──────────────────────────────────────────────────────────────────

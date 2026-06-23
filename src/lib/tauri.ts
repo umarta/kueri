@@ -6,6 +6,7 @@ import type {
   ColumnInfo,
   QueryResult,
   ForeignKey,
+  IndexInfo,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -22,6 +23,12 @@ export const api = {
     invoke<string>("table_ddl", { id, schema, table }),
   foreignKeys: (id: string, schema: string, table: string) =>
     invoke<ForeignKey[]>("foreign_keys", { id, schema, table }),
+  listIndexes: (id: string, schema: string, table: string) =>
+    invoke<IndexInfo[]>("list_indexes", { id, schema, table }),
+  createIndex: (id: string, schema: string, table: string, name: string, columns: string[], unique: boolean) =>
+    invoke<void>("create_index", { id, schema, table, name, columns, unique }),
+  dropIndex: (id: string, schema: string, table: string, name: string) =>
+    invoke<void>("drop_index", { id, schema, table, name }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
   executeQuery: (id: string, sql: string) =>

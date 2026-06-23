@@ -5,7 +5,9 @@ use sqlx::{Column, Row, TypeInfo, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, ForeignKey, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+};
 use crate::error::AppResult;
 
 pub struct PgDriver {
@@ -118,6 +120,33 @@ impl Driver for PgDriver {
                 ref_schema,
                 ref_table,
                 ref_column,
+            })
+            .collect())
+    }
+
+    async fn list_indexes(&self, schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let rows: Vec<(String, bool, String)> = sqlx::query_as(
+            "SELECT i.relname, ix.indisunique, \
+                    array_to_string(array_agg(a.attname ORDER BY x.ord), ',') \
+             FROM pg_index ix \
+             JOIN pg_class i ON i.oid = ix.indexrelid \
+             JOIN pg_class t ON t.oid = ix.indrelid \
+             JOIN pg_namespace n ON n.oid = t.relnamespace \
+             JOIN unnest(ix.indkey) WITH ORDINALITY AS x(attnum, ord) ON true \
+             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum \
+             WHERE n.nspname = $1 AND t.relname = $2 \
+             GROUP BY i.relname, ix.indisunique ORDER BY i.relname",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, unique, cols)| IndexInfo {
+                name,
+                unique,
+                columns: cols.split(',').map(|s| s.to_string()).collect(),
             })
             .collect())
     }

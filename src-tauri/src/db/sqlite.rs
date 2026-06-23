@@ -5,7 +5,9 @@ use sqlx::{Column, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, ForeignKey, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{
+    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+};
 use crate::error::AppResult;
 
 pub struct SqliteDriver {
@@ -103,6 +105,28 @@ impl Driver for SqliteDriver {
                 ref_schema: "main".into(),
                 ref_table,
                 ref_column: ref_column.unwrap_or_default(),
+            });
+        }
+        Ok(out)
+    }
+
+    async fn list_indexes(&self, _schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
+        let q = format!("PRAGMA index_list(\"{}\")", table.replace('"', "\"\""));
+        let rows = sqlx::query(&q).fetch_all(&self.pool).await?;
+        let mut out = Vec::new();
+        for r in &rows {
+            let name: String = r.try_get("name").unwrap_or_default();
+            let unique: i64 = r.try_get("unique").unwrap_or(0);
+            let iq = format!("PRAGMA index_info(\"{}\")", name.replace('"', "\"\""));
+            let irows = sqlx::query(&iq).fetch_all(&self.pool).await?;
+            let columns = irows
+                .iter()
+                .map(|ir| ir.try_get::<String, _>("name").unwrap_or_default())
+                .collect();
+            out.push(IndexInfo {
+                name,
+                unique: unique == 1,
+                columns,
             });
         }
         Ok(out)

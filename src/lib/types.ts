@@ -91,6 +91,13 @@ export interface ForeignKey {
   ref_column: string;
 }
 
+/** An index on a table. */
+export interface IndexInfo {
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
 /** A single filter condition in the filter bar. */
 export interface FilterCond {
   column: string;

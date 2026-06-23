@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::ColumnDef;
-use crate::db::driver::{ColumnInfo, ForeignKey, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{ColumnInfo, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo};
 use crate::db::pool::AppState;
 use crate::error::{AppError, AppResult};
 
@@ -68,6 +68,43 @@ pub async fn foreign_keys(
     table: String,
 ) -> AppResult<Vec<ForeignKey>> {
     state.get(&id)?.list_foreign_keys(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn list_indexes(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<Vec<IndexInfo>> {
+    state.get(&id)?.list_indexes(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn create_index(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    name: String,
+    columns: Vec<String>,
+    unique: bool,
+) -> AppResult<()> {
+    state
+        .get(&id)?
+        .create_index(&schema, &table, &name, &columns, unique)
+        .await
+}
+
+#[tauri::command]
+pub async fn drop_index(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    name: String,
+) -> AppResult<()> {
+    state.get(&id)?.drop_index(&schema, &table, &name).await
 }
 
 #[tauri::command]
