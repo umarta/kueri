@@ -3,12 +3,14 @@ mod db;
 mod error;
 mod menu;
 mod persist;
+mod pgtools;
 
 use db::pool::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .setup(|app| {
             menu::build(app)?;
@@ -32,6 +34,8 @@ pub fn run() {
             commands::rename_column,
             commands::change_column_type,
             commands::set_column_nullable,
+            pgtools::pg_export,
+            pgtools::pg_import,
             persist::load_connections,
             persist::save_connections,
             persist::secret_set,

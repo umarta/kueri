@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, onMount, onDestroy } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import Welcome from "./components/Welcome.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import WorkspaceRail from "./components/WorkspaceRail.svelte";
@@ -14,6 +15,7 @@
   import CommandPalette from "./components/CommandPalette.svelte";
   import LogPanel from "./components/LogPanel.svelte";
   import Settings from "./components/Settings.svelte";
+  import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
@@ -30,6 +32,45 @@
   let detailOpen = false;
   let inserting = false;
   let settingsOpen = false;
+  let exportOpen = false;
+  let toast: { ok: boolean; msg: string } | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showToast(ok: boolean, msg: string) {
+    toast = { ok, msg };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), ok ? 6000 : 12000);
+  }
+
+  function openExport() {
+    if ($activeConnection?.kind !== "postgres") {
+      showToast(false, "Export & restore currently supports PostgreSQL only.");
+      return;
+    }
+    exportOpen = true;
+  }
+
+  async function runImport() {
+    const cfg = $activeConnection;
+    if (!cfg) return;
+    if (cfg.kind !== "postgres") {
+      showToast(false, "Export & restore currently supports PostgreSQL only.");
+      return;
+    }
+    const picked = await openFileDialog({
+      filters: [{ name: "SQL / dump", extensions: ["sql", "dump", "backup", "pgdump"] }],
+    });
+    const path = Array.isArray(picked) ? picked[0] : picked;
+    if (!path) return;
+    showToast(true, "Importing…");
+    try {
+      const msg = await api.pgImport(cfg, path);
+      showToast(true, msg);
+      await refresh();
+    } catch (e) {
+      showToast(false, (e as { message?: string })?.message ?? String(e));
+    }
+  }
 
   // ── Query tabs ──────────────────────────────────────────────────────────────
   let seq = 1;
@@ -390,6 +431,8 @@
       case "new_connection": addOpen = true; break;
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
+      case "export_db": openExport(); break;
+      case "import_db": runImport(); break;
       case "refresh": refresh(); break;
       case "disconnect": disconnect(); break;
       case "open_palette": paletteOpen = true; break;
@@ -621,10 +664,35 @@
   <Settings on:close={() => (settingsOpen = false)} />
 {/if}
 
+{#if exportOpen && $activeConnection}
+  <ExportDialog cfg={$activeConnection} on:close={() => (exportOpen = false)} />
+{/if}
+
+{#if toast}
+  <div class="toast" class:err={!toast.ok} role="status">
+    <span class="tmsg">{toast.msg}</span>
+    <button class="tx" on:click={() => (toast = null)} aria-label="Dismiss">
+      <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+{/if}
+
 <style>
   .shell { display: flex; height: 100vh; overflow: hidden; }
   .app { flex: 1; min-width: 0; display: grid; grid-template-rows: 44px 1fr; overflow: hidden; }
   .add-overlay { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg-content); }
+
+  .toast {
+    position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: var(--z-toast);
+    max-width: 460px; display: flex; align-items: flex-start; gap: var(--s-3);
+    padding: var(--s-3) var(--s-4); border-radius: var(--r-md);
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-pop); color: var(--ink-soft);
+  }
+  .toast.err { border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
+  .tmsg { font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .tx { flex: none; color: inherit; opacity: 0.7; }
+  .tx:hover { opacity: 1; }
   .body { display: grid; grid-template-columns: 248px 1fr; grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
   .body.collapsed { grid-template-columns: 1fr; }
 
