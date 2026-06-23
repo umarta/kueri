@@ -104,6 +104,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
             "Open Anything…",
             Some("CmdOrCtrl+P"),
         )?)
+        .item(&item(
+            app,
+            "saved_queries",
+            "Saved Queries…",
+            Some("CmdOrCtrl+Shift+S"),
+        )?)
         .separator()
         .item(&item(
             app,
