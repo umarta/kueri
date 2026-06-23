@@ -62,6 +62,13 @@
     dispatch("change", out);
   }
 
+  /** Replace the editor content (loading a saved/history query). */
+  export function setDoc(text: string) {
+    if (!view) return;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    dispatch("change", text);
+  }
+
   onMount(() => {
     view = new EditorView({
       parent: host,
