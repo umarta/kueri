@@ -56,8 +56,8 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .separator()
         .item(&item(app, "import_csv", "Import CSV…", None)?)
         .separator()
-        .item(&item(app, "export_csv", "Export Result as CSV…", None)?)
-        .item(&item(app, "export_json", "Export Result as JSON…", None)?)
+        .item(&item(app, "export_result", "Export Result…", None)?)
+        .item(&item(app, "export_table", "Export Whole Table…", None)?)
         .separator()
         .item(&item(app, "close_tab", "Close Tab", Some("CmdOrCtrl+W"))?)
         .build()?;
