@@ -134,8 +134,19 @@
     tabs = [...tabs, t];
     activeId = t.id;
   }
+  // Load SQL into the active query tab (don't spawn a tab each click); if the
+  // active tab isn't a query tab, open one new query tab.
+  function loadIntoEditor(sql: string) {
+    if (tab.kind === "query") {
+      tab.doc = sql;
+      sync();
+      editor?.setDoc(sql);
+    } else {
+      openSqlTab(sql, "Query");
+    }
+  }
   function openHistoryQuery(sql: string) {
-    openSqlTab(sql, "History");
+    loadIntoEditor(sql);
   }
   function runInNewTab(sql: string) {
     const t = blankQueryTab();
@@ -974,7 +985,7 @@
           currentSql={tab.kind === "query" ? tab.doc : ""}
           on:selectTable={onSelectTable}
           on:openTableFull={onOpenTableFull}
-          on:openQuery={(e) => openSqlTab(e.detail, "Query")}
+          on:openQuery={(e) => loadIntoEditor(e.detail)}
           on:runQuery={(e) => runInNewTab(e.detail)}
         />
       {/if}
@@ -1139,7 +1150,7 @@
 {#if savedOpen}
   <SavedQueries
     currentSql={tab.kind === "query" ? tab.doc : ""}
-    on:open={(e) => { openSqlTab(e.detail, "Saved"); savedOpen = false; }}
+    on:open={(e) => { loadIntoEditor(e.detail); savedOpen = false; }}
     on:close={() => (savedOpen = false)}
   />
 {/if}
