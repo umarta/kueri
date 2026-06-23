@@ -779,6 +779,7 @@
                     selectedRow={tab.selectedRow}
                     sort={tab.sort}
                     sortable={tab.kind === "table"}
+                    tableKey={tab.selected ? `${tab.selected.schema}.${tab.selected.table}` : ""}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
                     on:sortColumn={(e) => toggleSort(e.detail)}

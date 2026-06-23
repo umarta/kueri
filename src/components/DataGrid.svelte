@@ -14,6 +14,8 @@
   export let sort: { col: string; dir: "asc" | "desc" } | null = null;
   /** Whether clicking a header sorts (table browse only). */
   export let sortable = false;
+  /** `schema.table` for persisting per-table column visibility ("" = no persist). */
+  export let tableKey = "";
 
   const dispatch = createEventDispatcher<{
     commit: RowEdit[];
@@ -140,20 +142,56 @@
   }
 
   // ── Column widths (mono ≈ 7.3px/char), sampled from header + first 60 rows ──
-  function computeWidths(res: QueryResult): number[] {
+  function widthOf(res: QueryResult, c: number): number {
+    let max = res.columns[c].length;
     const n = Math.min(res.rows.length, 60);
-    return res.columns.map((col, c) => {
-      let max = col.length;
-      for (let i = 0; i < n; i++) {
-        const len = fmt(res.rows[i][c]).length;
-        if (len > max) max = len;
-      }
-      return Math.min(460, Math.max(84, Math.round(max * 7.3 + 26)));
-    });
+    for (let i = 0; i < n; i++) {
+      const len = fmt(res.rows[i][c]).length;
+      if (len > max) max = len;
+    }
+    return Math.min(460, Math.max(84, Math.round(max * 7.3 + 26)));
   }
-  $: widths = result ? computeWidths(result) : [];
-  $: template = `${GUTTER}px ${widths.map((w) => `${w}px`).join(" ")}`;
-  $: totalWidth = GUTTER + widths.reduce((a, b) => a + b, 0);
+  // Columns the user has hidden, persisted per table.
+  let hidden = new Set<string>();
+  let colMenu: { right: number; top: number } | null = null;
+  $: loadHidden(tableKey);
+  function loadHidden(k: string) {
+    try {
+      const raw = k ? localStorage.getItem("kueri.cols." + k) : null;
+      hidden = new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      hidden = new Set();
+    }
+  }
+  function saveHidden() {
+    if (!tableKey) return;
+    try {
+      localStorage.setItem("kueri.cols." + tableKey, JSON.stringify([...hidden]));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  function toggleCol(name: string) {
+    const s = new Set(hidden);
+    if (s.has(name)) s.delete(name);
+    else s.add(name);
+    hidden = s;
+    saveHidden();
+  }
+  function showAllCols() {
+    hidden = new Set();
+    saveHidden();
+  }
+  function openColMenu(e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    colMenu = colMenu ? null : { right: window.innerWidth - r.right, top: r.bottom + 4 };
+  }
+
+  // Visible columns (with their original index), and widths/template over them.
+  $: visible = result ? result.columns.map((name, i) => ({ name, i })).filter((v) => !hidden.has(v.name)) : [];
+  $: vwidths = result ? visible.map((v) => widthOf(result!, v.i)) : [];
+  $: template = `${GUTTER}px ${vwidths.map((w) => `${w}px`).join(" ")}`;
+  $: totalWidth = GUTTER + vwidths.reduce((a, b) => a + b, 0);
 
   // ── Row virtualization ──────────────────────────────────────────────────────
   let scrollEl: HTMLDivElement | undefined;
@@ -180,18 +218,24 @@
   <div class="meta">
     <span class="count">{result.row_count.toLocaleString()} {result.row_count === 1 ? "row" : "rows"}</span>
     <span class="cols">{result.columns.length} columns</span>
+    <div class="meta-spacer"></div>
     {#if editable}<span class="editable-hint">double-click a cell to edit</span>{/if}
+    {#if result.columns.length}
+      <button class="cols-btn" on:click={openColMenu} title="Show / hide columns">
+        Columns{#if hidden.size} · {hidden.size} hidden{/if}
+      </button>
+    {/if}
   </div>
 
   <div class="wrap" bind:this={scrollEl}>
     <div class="surface" role="grid" aria-rowcount={result.row_count} style="width: {totalWidth}px">
       <div class="head" role="row" style="grid-template-columns: {template}">
         <div class="hcell gutter" role="columnheader"></div>
-        {#each result.columns as c (c)}
+        {#each visible as v (v.name)}
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-          <div class="hcell" class:sortable role="columnheader" tabindex="-1" title={c} on:click={() => sortable && dispatch("sortColumn", c)}>
-            <span class="hname">{c}</span>
-            {#if sort && sort.col === c}<span class="sortind">{sort.dir === "asc" ? "↑" : "↓"}</span>{/if}
+          <div class="hcell" class:sortable role="columnheader" tabindex="-1" title={v.name} on:click={() => sortable && dispatch("sortColumn", v.name)}>
+            <span class="hname">{v.name}</span>
+            {#if sort && sort.col === v.name}<span class="sortind">{sort.dir === "asc" ? "↑" : "↓"}</span>{/if}
           </div>
         {/each}
       </div>
@@ -211,7 +255,9 @@
               style="transform: translateY({vrow.start}px); height: {ROW_H}px; grid-template-columns: {template}"
             >
               <div class="cell gutter" role="gridcell">{i + 1}</div>
-              {#each result.rows[i] as cell, j (j)}
+              {#each visible as v (v.name)}
+                {@const j = v.i}
+                {@const cell = result.rows[i][j]}
                 <div
                   class="cell"
                   role="gridcell"
@@ -237,6 +283,21 @@
     </div>
     {#if result.rows.length === 0}<div class="no-rows">Query returned no rows.</div>{/if}
   </div>
+
+  {#if colMenu}
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="menu-backdrop" on:click={() => (colMenu = null)}></div>
+    <div class="col-menu" style="right: {colMenu.right}px; top: {colMenu.top}px;">
+      <button class="col-all" on:click={showAllCols}>Show all</button>
+      <div class="cm-sep"></div>
+      {#each result.columns as name (name)}
+        <label class="col-item">
+          <input type="checkbox" checked={!hidden.has(name)} on:change={() => toggleCol(name)} />
+          <span>{name}</span>
+        </label>
+      {/each}
+    </div>
+  {/if}
 
   {#if selected.size}
     <div class="commit-bar sel-bar" role="status">
@@ -279,7 +340,24 @@
   }
   .count { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); }
   .cols { font-size: 11.5px; color: var(--faint); }
-  .editable-hint { margin-left: auto; font-size: 11px; color: var(--faint); }
+  .meta-spacer { flex: 1; }
+  .editable-hint { font-size: 11px; color: var(--faint); }
+  .cols-btn { font-size: 11.5px; color: var(--muted); padding: 2px var(--s-2); border-radius: var(--r-xs); }
+  .cols-btn:hover { background: var(--bg-elevated); color: var(--ink); }
+
+  .menu-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
+  .col-menu {
+    position: fixed; z-index: var(--z-dropdown); min-width: 180px; max-height: 360px; overflow-y: auto;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: var(--r-md); box-shadow: var(--shadow-pop); padding: var(--s-1);
+    display: flex; flex-direction: column;
+  }
+  .col-all { text-align: left; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12px; color: var(--accent); }
+  .col-all:hover { background: var(--bg-panel); }
+  .cm-sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--hairline); }
+  .col-item { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12.5px; color: var(--ink-soft); font-family: var(--font-mono); cursor: pointer; }
+  .col-item:hover { background: var(--bg-panel); }
+  .col-item input { accent-color: var(--accent); }
 
   .wrap { flex: 1; overflow: auto; background: var(--bg-content); position: relative; }
   .surface { min-width: 100%; }
