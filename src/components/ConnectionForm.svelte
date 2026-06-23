@@ -154,6 +154,30 @@
           </label>
         {/if}
       {/if}
+
+      <label class="row check">
+        <input type="checkbox" bind:checked={config.ssh_enabled} />
+        <span>Connect via SSH tunnel</span>
+      </label>
+      {#if config.ssh_enabled}
+        <label class="row">
+          <span class="lbl">SSH host</span>
+          <input class="field" bind:value={config.ssh_host} placeholder="bastion.example.com" />
+        </label>
+        <label class="row">
+          <span class="lbl">SSH port</span>
+          <input class="field port" type="number" bind:value={config.ssh_port} placeholder="22" />
+        </label>
+        <label class="row">
+          <span class="lbl">SSH user</span>
+          <input class="field" bind:value={config.ssh_user} placeholder="ubuntu" />
+        </label>
+        <label class="row">
+          <span class="lbl">Private key</span>
+          <input class="field" bind:value={config.ssh_key} placeholder="~/.ssh/id_ed25519 (or blank for agent)" />
+        </label>
+        <p class="ssh-note">Key/agent auth only. The DB host/port above are reached through the tunnel.</p>
+      {/if}
     {/if}
 
     {#if error}
@@ -204,6 +228,7 @@
 
   .hint { margin: -2px 0 0; padding-left: calc(92px + var(--s-5)); font-size: 11px; color: var(--faint); }
 
+  .ssh-note { margin: calc(-1 * var(--s-2)) 0 0; font-size: 11px; color: var(--faint); line-height: 1.45; }
   .banner {
     font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
     padding: var(--s-3) var(--s-4); border-radius: var(--r-sm);

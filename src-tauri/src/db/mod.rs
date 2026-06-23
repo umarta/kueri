@@ -7,6 +7,7 @@ pub mod pool;
 pub mod postgres;
 pub mod sqlite;
 pub mod sqlserver;
+pub mod tunnel;
 
 use serde::{Deserialize, Serialize};
 
