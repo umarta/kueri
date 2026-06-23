@@ -6,9 +6,10 @@ use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
-    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+    ColumnInfo, Driver, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo,
+    TableInfo,
 };
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 pub struct PgDriver {
     pool: PgPool,
@@ -176,6 +177,71 @@ impl Driver for PgDriver {
                 method,
                 predicate: predicate.unwrap_or_default(),
                 columns: cols.split(',').map(|s| s.to_string()).collect(),
+            })
+            .collect())
+    }
+
+    async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>> {
+        let rows: Vec<(
+            i32,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            Option<String>,
+        )> = sqlx::query_as(
+            "SELECT pid, usename, datname, state, \
+                 EXTRACT(EPOCH FROM (now() - query_start))::int, query \
+                 FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND query <> '' \
+                 ORDER BY query_start NULLS LAST",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(pid, user, db, state, secs, query)| ProcessInfo {
+                pid: pid.to_string(),
+                user: user.unwrap_or_default(),
+                database: db.unwrap_or_default(),
+                state: state.unwrap_or_default(),
+                seconds: secs.unwrap_or(0) as i64,
+                query: query.unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn kill_process(&self, pid: &str) -> AppResult<()> {
+        let n: i32 = pid
+            .parse()
+            .map_err(|_| AppError::Other(format!("invalid pid: {pid}")))?;
+        sqlx::query("SELECT pg_terminate_backend($1)")
+            .bind(n)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_roles(&self) -> AppResult<Vec<RoleInfo>> {
+        let rows: Vec<(String, bool, bool, bool)> = sqlx::query_as(
+            "SELECT rolname, rolsuper, rolcreatedb, rolcanlogin FROM pg_roles ORDER BY rolname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, super_, createdb, login)| {
+                let mut a = vec![];
+                if super_ {
+                    a.push("superuser");
+                }
+                if createdb {
+                    a.push("createdb");
+                }
+                a.push(if login { "login" } else { "no-login" });
+                RoleInfo {
+                    name,
+                    attributes: a.join(", "),
+                }
             })
             .collect())
     }

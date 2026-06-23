@@ -148,6 +148,10 @@ pub fn build(app: &App) -> tauri::Result<()> {
             Some("CmdOrCtrl+Shift+F"),
         )?)
         .separator()
+        .item(&item(app, "server_monitor", "Server Monitor…", None)?)
+        .item(&item(app, "new_schema", "New Schema…", None)?)
+        .item(&item(app, "drop_schema", "Drop Schema…", None)?)
+        .separator()
         .item(&item(app, "export_db", "Export Database…", None)?)
         .item(&item(app, "import_db", "Import / Restore…", None)?)
         .separator()

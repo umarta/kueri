@@ -55,6 +55,24 @@ pub struct IndexInfo {
     pub predicate: String,
 }
 
+/// A running server session/query (Server Monitor).
+#[derive(Serialize)]
+pub struct ProcessInfo {
+    pub pid: String,
+    pub user: String,
+    pub database: String,
+    pub state: String,
+    pub seconds: i64,
+    pub query: String,
+}
+
+/// A database role/user.
+#[derive(Serialize)]
+pub struct RoleInfo {
+    pub name: String,
+    pub attributes: String,
+}
+
 /// Every relational backend implements this. The UI and Tauri commands only
 /// ever talk to `dyn Driver`, never to a concrete database. This is what keeps
 /// the app simple while supporting many databases.
@@ -78,6 +96,33 @@ pub trait Driver: Send + Sync {
     /// Indexes on a table. Default empty; relational drivers override it.
     async fn list_indexes(&self, _schema: &str, _table: &str) -> AppResult<Vec<IndexInfo>> {
         Ok(vec![])
+    }
+
+    /// Running sessions/queries (Server Monitor). Default empty.
+    async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>> {
+        Ok(vec![])
+    }
+    /// Terminate a session by its id. Default unsupported.
+    async fn kill_process(&self, _pid: &str) -> AppResult<()> {
+        Err(AppError::Other(
+            "Killing sessions isn't supported for this database.".into(),
+        ))
+    }
+    /// Database roles/users. Default empty.
+    async fn list_roles(&self) -> AppResult<Vec<RoleInfo>> {
+        Ok(vec![])
+    }
+
+    /// Create / drop a schema (Postgres) or database (MySQL).
+    async fn create_schema(&self, name: &str) -> AppResult<()> {
+        self.run_query(&ddl::create_schema(self.dialect(), name))
+            .await?;
+        Ok(())
+    }
+    async fn drop_schema(&self, name: &str) -> AppResult<()> {
+        self.run_query(&ddl::drop_schema(self.dialect(), name))
+            .await?;
+        Ok(())
     }
     async fn create_index(
         &self,

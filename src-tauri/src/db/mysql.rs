@@ -6,9 +6,10 @@ use sqlx::{Column, Executor, Row, ValueRef};
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
-    ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
+    ColumnInfo, Driver, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo,
+    TableInfo,
 };
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 pub struct MySqlDriver {
     pool: MySqlPool,
@@ -161,6 +162,60 @@ impl Driver for MySqlDriver {
         // Returns (Table, Create Table).
         let row: (String, String) = sqlx::query_as(&q).fetch_one(&self.pool).await?;
         Ok(format!("{};", row.1))
+    }
+
+    async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>> {
+        let rows: Vec<(
+            i64,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            i64,
+            Option<String>,
+        )> = sqlx::query_as(
+            "SELECT id, CAST(user AS CHAR), CAST(db AS CHAR), CAST(state AS CHAR), \
+                 CAST(time AS SIGNED), CAST(info AS CHAR) \
+                 FROM information_schema.processlist WHERE info IS NOT NULL ORDER BY time DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(pid, user, db, state, secs, query)| ProcessInfo {
+                pid: pid.to_string(),
+                user: user.unwrap_or_default(),
+                database: db.unwrap_or_default(),
+                state: state.unwrap_or_default(),
+                seconds: secs,
+                query: query.unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    async fn kill_process(&self, pid: &str) -> AppResult<()> {
+        let n: i64 = pid
+            .parse()
+            .map_err(|_| AppError::Other(format!("invalid id: {pid}")))?;
+        sqlx::query(&format!("KILL {n}"))
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_roles(&self) -> AppResult<Vec<RoleInfo>> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT CAST(user AS CHAR), CAST(host AS CHAR) FROM mysql.user ORDER BY user",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap_or_default();
+        Ok(rows
+            .into_iter()
+            .map(|(name, host)| RoleInfo {
+                name,
+                attributes: format!("@{host}"),
+            })
+            .collect())
     }
 
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {

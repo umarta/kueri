@@ -7,6 +7,8 @@ import type {
   QueryResult,
   ForeignKey,
   IndexInfo,
+  ProcessInfo,
+  RoleInfo,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -36,6 +38,11 @@ export const api = {
   executeQuery: (id: string, sql: string, queryId: string) =>
     invoke<QueryResult>("execute_query", { id, sql, queryId }),
   cancelQuery: (queryId: string) => invoke<void>("cancel_query", { queryId }),
+  listProcesses: (id: string) => invoke<ProcessInfo[]>("list_processes", { id }),
+  killProcess: (id: string, pid: string) => invoke<void>("kill_process", { id, pid }),
+  listRoles: (id: string) => invoke<RoleInfo[]>("list_roles", { id }),
+  createSchema: (id: string, name: string) => invoke<void>("create_schema", { id, name }),
+  dropSchema: (id: string, name: string) => invoke<void>("drop_schema", { id, name }),
 
   // DDL — database-agnostic; the Rust driver renders the right SQL per dialect.
   createTable: (id: string, schema: string, name: string, columns: ColumnDraft[]) =>
