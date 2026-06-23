@@ -248,14 +248,23 @@ pub fn add_foreign_key(
     ref_table: &str,
     ref_column: &str,
     name: &str,
+    validate: bool,
 ) -> String {
+    // Postgres can add the constraint without checking existing rows (NOT VALID),
+    // useful when legacy data has orphans; it's enforced for new/changed rows.
+    let not_valid = if !validate && d == Dialect::Postgres {
+        " NOT VALID"
+    } else {
+        ""
+    };
     format!(
-        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({});",
+        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}){};",
         qualify(d, schema, table),
         ident(d, name),
         ident(d, column),
         qualify(d, schema, ref_table),
-        ident(d, ref_column)
+        ident(d, ref_column),
+        not_valid
     )
 }
 

@@ -114,6 +114,7 @@
   let fkRefCols: string[] = [];
   let fkRefTable = "";
   let fkRefCol = "";
+  let fkValidate = true;
   function openFkMenu(c: ColumnInfo, e: MouseEvent) {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     fkMenu = { col: c.name, left: Math.min(r.left, window.innerWidth - 280), top: r.bottom + 2 };
@@ -127,6 +128,7 @@
     // Guess the referenced table from a `<thing>_id` column name.
     const base = col.endsWith("_id") ? col.slice(0, -3) : col;
     fkRefTable = fkTables.find((t) => t === base || t === base + "s") ?? fkTables[0] ?? "";
+    fkValidate = true;
     fkCreating = true;
     await loadRefCols();
   }
@@ -142,7 +144,7 @@
     if (!fkMenu || !connectionId || !fkRefTable || !fkRefCol) return;
     const col = fkMenu.col;
     const name = `fk_${table}_${col}`;
-    if (await run(() => api.addForeignKey(connectionId!, schema, table, col, fkRefTable, fkRefCol, name))) {
+    if (await run(() => api.addForeignKey(connectionId!, schema, table, col, fkRefTable, fkRefCol, name, fkValidate))) {
       fkMenu = null;
       fkCreating = false;
       await loadMeta();
@@ -437,6 +439,9 @@
               {#each fkRefCols as rc (rc)}<option value={rc}>{rc}</option>{/each}
             </select>
           </label>
+          {#if kind === "postgres"}
+            <label class="fk-skip"><input type="checkbox" bind:checked={fkValidate} /> Validate existing rows</label>
+          {/if}
           {#if error}<p class="fk-err">{error}</p>{/if}
           <div class="fk-act">
             <button class="idx-cancel" on:click={() => (fkMenu = null)} disabled={busy}>Cancel</button>
@@ -531,7 +536,9 @@
   .fk-l { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
   .fk-l select { height: 28px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 var(--s-2); }
   .fk-l select:focus { outline: none; border-color: var(--accent); }
-  .fk-err { margin: 0; font-size: 11px; color: var(--danger); }
+  .fk-skip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
+  .fk-skip input { accent-color: var(--accent); }
+  .fk-err { margin: 0; font-size: 11px; color: var(--danger); white-space: pre-wrap; }
   .fk-act { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: 2px; }
   .mono { font-family: var(--font-mono); color: var(--ink-soft); }
   .dim { color: var(--faint); }

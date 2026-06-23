@@ -118,10 +118,19 @@ pub async fn add_foreign_key(
     ref_table: String,
     ref_column: String,
     name: String,
+    validate: bool,
 ) -> AppResult<()> {
     state
         .get(&id)?
-        .add_foreign_key(&schema, &table, &column, &ref_table, &ref_column, &name)
+        .add_foreign_key(
+            &schema,
+            &table,
+            &column,
+            &ref_table,
+            &ref_column,
+            &name,
+            validate,
+        )
         .await
 }
 

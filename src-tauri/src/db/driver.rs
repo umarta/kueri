@@ -100,6 +100,7 @@ pub trait Driver: Send + Sync {
             .await?;
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)]
     async fn add_foreign_key(
         &self,
         schema: &str,
@@ -108,6 +109,7 @@ pub trait Driver: Send + Sync {
         ref_table: &str,
         ref_column: &str,
         name: &str,
+        validate: bool,
     ) -> AppResult<()> {
         if self.dialect() == Dialect::Sqlite {
             return Err(AppError::Other(
@@ -123,6 +125,7 @@ pub trait Driver: Send + Sync {
             ref_table,
             ref_column,
             name,
+            validate,
         ))
         .await?;
         Ok(())
