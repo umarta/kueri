@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::{Column, Row, TypeInfo, ValueRef};
+use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
@@ -158,10 +158,16 @@ impl Driver for PgDriver {
 
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = rows
-            .first()
-            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-            .unwrap_or_default();
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            // Empty result: pull column names from the prepared statement so the
+            // grid still shows headers and the filter bar keeps its column list.
+            match (&self.pool).describe(sql).await {
+                Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
+                Err(_) => Vec::new(),
+            }
+        };
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut rec = Vec::with_capacity(row.columns().len());

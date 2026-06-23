@@ -763,7 +763,7 @@
 
           {#if tab.view === "data" && tab.filtersOpen}
             <FilterBar
-              columns={tab.result?.columns ?? tab.columns.map((c) => c.name)}
+              columns={tab.result?.columns?.length ? tab.result.columns : tab.columns.map((c) => c.name)}
               filters={tab.filters}
               on:apply={applyFilters}
               on:clear={clearFilters}

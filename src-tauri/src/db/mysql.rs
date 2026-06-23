@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions, MySqlRow};
-use sqlx::{Column, Row, ValueRef};
+use sqlx::{Column, Executor, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
@@ -161,10 +161,14 @@ impl Driver for MySqlDriver {
 
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-        let columns = rows
-            .first()
-            .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-            .unwrap_or_default();
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            match (&self.pool).describe(sql).await {
+                Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
+                Err(_) => Vec::new(),
+            }
+        };
         let mut out = Vec::with_capacity(rows.len());
         for row in &rows {
             let mut rec = Vec::with_capacity(row.columns().len());
