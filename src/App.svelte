@@ -81,6 +81,15 @@
     if (tab.running) api.cancelQuery(tab.id).catch(() => {});
   }
 
+  // Load a statement from the history panel into a fresh query tab.
+  function openHistoryQuery(sql: string) {
+    const t = blankQueryTab();
+    t.doc = sql;
+    t.title = "History";
+    tabs = [...tabs, t];
+    activeId = t.id;
+  }
+
   // ── Query tabs ──────────────────────────────────────────────────────────────
   let seq = 1;
   function blankQueryTab(): QueryTab {
@@ -825,7 +834,7 @@
                 </div>
                 {#if logOpen}
                   <div class="log-col">
-                    <LogPanel on:close={() => (logOpen = false)} />
+                    <LogPanel on:close={() => (logOpen = false)} on:pick={(e) => openHistoryQuery(e.detail)} />
                   </div>
                 {/if}
               </div>

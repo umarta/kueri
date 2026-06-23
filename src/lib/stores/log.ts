@@ -8,10 +8,31 @@ export interface LogEntry {
   error?: string;
 }
 
-export const queryLog = writable<LogEntry[]>([]);
-
-let seq = 0;
+const STORAGE = "kueri.querylog";
 const MAX = 500;
+
+function loadPersisted(): LogEntry[] {
+  try {
+    const raw = localStorage.getItem(STORAGE);
+    return raw ? (JSON.parse(raw) as LogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const initial = loadPersisted();
+export const queryLog = writable<LogEntry[]>(initial);
+
+// Persist across restarts (searchable history).
+queryLog.subscribe((l) => {
+  try {
+    localStorage.setItem(STORAGE, JSON.stringify(l));
+  } catch {
+    /* storage unavailable / quota */
+  }
+});
+
+let seq = initial.reduce((m, e) => Math.max(m, e.id), 0);
 
 function clock(): string {
   const d = new Date();
