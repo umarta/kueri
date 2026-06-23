@@ -117,6 +117,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
         )?)
         .separator()
         .item(&item(app, "run_query", "Run Query", None)?)
+        .item(&item(
+            app,
+            "format_sql",
+            "Format SQL",
+            Some("CmdOrCtrl+Shift+F"),
+        )?)
         .separator()
         .item(&item(app, "export_db", "Export Database…", None)?)
         .item(&item(app, "import_db", "Import / Restore…", None)?)

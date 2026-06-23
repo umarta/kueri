@@ -28,6 +28,7 @@
   let sidebarOpen = true;
   let sidebar: Sidebar;
   let grid: DataGrid;
+  let editor: QueryEditor;
   let paletteOpen = false;
   let logOpen = false;
   let detailOpen = false;
@@ -602,6 +603,7 @@
       case "commit": grid?.commitStaged(); break;
       case "add_row": beginInsert(); break;
       case "duplicate_row": beginDuplicate(); break;
+      case "format_sql": if (tab.kind === "query") editor?.format(); break;
       case "prev_tab": cycleTab(-1); break;
       case "next_tab": cycleTab(1); break;
       case "settings": settingsOpen = true; break;
@@ -715,6 +717,7 @@
         {#if tab.kind === "query"}
           {#key activeId}
             <QueryEditor
+              bind:this={editor}
               running={tab.running}
               dialect={$activeConnection?.kind ?? "postgres"}
               schema={$schemaCatalog}
