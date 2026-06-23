@@ -31,6 +31,15 @@ pub struct QueryResult {
     pub row_count: usize,
 }
 
+/// A foreign-key edge from a column to the referenced table column.
+#[derive(Serialize)]
+pub struct ForeignKey {
+    pub column: String,
+    pub ref_schema: String,
+    pub ref_table: String,
+    pub ref_column: String,
+}
+
 /// Every relational backend implements this. The UI and Tauri commands only
 /// ever talk to `dyn Driver`, never to a concrete database. This is what keeps
 /// the app simple while supporting many databases.
@@ -44,6 +53,12 @@ pub trait Driver: Send + Sync {
     async fn list_primary_keys(&self, schema: &str, table: &str) -> AppResult<Vec<String>>;
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult>;
     async fn close(&self);
+
+    /// Foreign keys declared on a table. Default empty (engines without FK
+    /// metadata); the relational drivers override it.
+    async fn list_foreign_keys(&self, _schema: &str, _table: &str) -> AppResult<Vec<ForeignKey>> {
+        Ok(vec![])
+    }
 
     // ── DDL ──────────────────────────────────────────────────────────────────
     // Each driver reports its SQL dialect; the default methods below build the

@@ -5,6 +5,7 @@ import type {
   TableInfo,
   ColumnInfo,
   QueryResult,
+  ForeignKey,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -19,6 +20,8 @@ export const api = {
     invoke<ColumnInfo[]>("list_columns", { id, schema, table }),
   tableDdl: (id: string, schema: string, table: string) =>
     invoke<string>("table_ddl", { id, schema, table }),
+  foreignKeys: (id: string, schema: string, table: string) =>
+    invoke<ForeignKey[]>("foreign_keys", { id, schema, table }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
   executeQuery: (id: string, sql: string) =>

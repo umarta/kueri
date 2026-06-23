@@ -83,7 +83,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -91,7 +91,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -226,6 +226,7 @@
       } catch {
         t.pkColumns = [];
       }
+      t.foreignKeys = await api.foreignKeys($activeConnectionId!, schema, table).catch(() => []);
     }
     // Load column types too — powers the Structure tab AND the row-detail panel.
     await loadColumns(t);
@@ -260,6 +261,21 @@
     t.selectedRow = null;
     sync();
     return browseTable(t, schema, table);
+  }
+
+  // ── Foreign-key navigation ───────────────────────────────────────────────────
+  function openTableFiltered(schema: string, table: string, column: string, value: string) {
+    const t = tableTab(schema, table);
+    t.filters = [{ column, op: "=", value }];
+    tabs = [...tabs, t];
+    activeId = t.id;
+    sync();
+    browseTable(t, schema, table);
+  }
+  function followFk(e: CustomEvent<{ column: string; value: string }>) {
+    const fk = tab.foreignKeys.find((f) => f.column === e.detail.column);
+    if (!fk || !fk.ref_column) return;
+    openTableFiltered(fk.ref_schema || $activeSchema || "public", fk.ref_table, fk.ref_column, e.detail.value);
   }
 
   // ── Filters ───────────────────────────────────────────────────────────────
@@ -780,6 +796,8 @@
                     sort={tab.sort}
                     sortable={tab.kind === "table"}
                     tableKey={tab.selected ? `${tab.selected.schema}.${tab.selected.table}` : ""}
+                    fkColumns={new Set(tab.foreignKeys.map((f) => f.column))}
+                    on:followFk={followFk}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
                     on:sortColumn={(e) => toggleSort(e.detail)}

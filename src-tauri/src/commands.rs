@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::ColumnDef;
-use crate::db::driver::{ColumnInfo, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{ColumnInfo, ForeignKey, QueryResult, SchemaInfo, TableInfo};
 use crate::db::pool::AppState;
 use crate::error::{AppError, AppResult};
 
@@ -58,6 +58,16 @@ pub async fn table_ddl(
     table: String,
 ) -> AppResult<String> {
     state.get(&id)?.table_ddl(&schema, &table).await
+}
+
+#[tauri::command]
+pub async fn foreign_keys(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<Vec<ForeignKey>> {
+    state.get(&id)?.list_foreign_keys(&schema, &table).await
 }
 
 #[tauri::command]

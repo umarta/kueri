@@ -5,7 +5,7 @@ use sqlx::{Column, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{ColumnInfo, Driver, ForeignKey, QueryResult, SchemaInfo, TableInfo};
 use crate::error::AppResult;
 
 pub struct SqliteDriver {
@@ -83,6 +83,29 @@ impl Driver for SqliteDriver {
         }
         keyed.sort_by_key(|(pos, _)| *pos);
         Ok(keyed.into_iter().map(|(_, name)| name).collect())
+    }
+
+    async fn list_foreign_keys(&self, _schema: &str, table: &str) -> AppResult<Vec<ForeignKey>> {
+        // PRAGMA can't be parameterized; table name is from our own sidebar.
+        let q = format!(
+            "PRAGMA foreign_key_list(\"{}\")",
+            table.replace('"', "\"\"")
+        );
+        let rows = sqlx::query(&q).fetch_all(&self.pool).await?;
+        let mut out = Vec::new();
+        for r in &rows {
+            let column: String = r.try_get("from").unwrap_or_default();
+            let ref_table: String = r.try_get("table").unwrap_or_default();
+            // `to` is NULL when the FK targets the referenced table's primary key.
+            let ref_column: Option<String> = r.try_get("to").ok();
+            out.push(ForeignKey {
+                column,
+                ref_schema: "main".into(),
+                ref_table,
+                ref_column: ref_column.unwrap_or_default(),
+            });
+        }
+        Ok(out)
     }
 
     async fn table_ddl(&self, _schema: &str, table: &str) -> AppResult<String> {

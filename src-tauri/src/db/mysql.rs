@@ -5,7 +5,7 @@ use sqlx::{Column, Row, ValueRef};
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
-use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
+use crate::db::driver::{ColumnInfo, Driver, ForeignKey, QueryResult, SchemaInfo, TableInfo};
 use crate::error::AppResult;
 
 pub struct MySqlDriver {
@@ -93,6 +93,28 @@ impl Driver for MySqlDriver {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|(name,)| name).collect())
+    }
+
+    async fn list_foreign_keys(&self, schema: &str, table: &str) -> AppResult<Vec<ForeignKey>> {
+        let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+            "SELECT CAST(column_name AS CHAR), CAST(referenced_table_schema AS CHAR), \
+                    CAST(referenced_table_name AS CHAR), CAST(referenced_column_name AS CHAR) \
+             FROM information_schema.key_column_usage \
+             WHERE table_schema = ? AND table_name = ? AND referenced_table_name IS NOT NULL",
+        )
+        .bind(schema)
+        .bind(table)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(column, ref_schema, ref_table, ref_column)| ForeignKey {
+                column,
+                ref_schema,
+                ref_table,
+                ref_column,
+            })
+            .collect())
     }
 
     async fn table_ddl(&self, schema: &str, table: &str) -> AppResult<String> {

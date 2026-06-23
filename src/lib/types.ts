@@ -80,6 +80,15 @@ export interface QueryTab {
   selectedRow: number | null;
   sort: { col: string; dir: "asc" | "desc" } | null;
   offset: number;
+  foreignKeys: ForeignKey[];
+}
+
+/** A foreign-key edge: `column` → `ref_schema.ref_table.ref_column`. */
+export interface ForeignKey {
+  column: string;
+  ref_schema: string;
+  ref_table: string;
+  ref_column: string;
 }
 
 /** A single filter condition in the filter bar. */

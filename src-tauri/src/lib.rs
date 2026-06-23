@@ -23,6 +23,7 @@ pub fn run() {
             commands::list_tables,
             commands::list_columns,
             commands::table_ddl,
+            commands::foreign_keys,
             commands::primary_keys,
             commands::execute_query,
             commands::create_table,

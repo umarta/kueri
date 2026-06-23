@@ -16,12 +16,15 @@
   export let sortable = false;
   /** `schema.table` for persisting per-table column visibility ("" = no persist). */
   export let tableKey = "";
+  /** Names of foreign-key columns (cells get a jump-to-reference affordance). */
+  export let fkColumns: Set<string> = new Set();
 
   const dispatch = createEventDispatcher<{
     commit: RowEdit[];
     selectRow: number;
     sortColumn: string;
     deleteRows: number[];
+    followFk: { column: string; value: string };
   }>();
 
   // ── Multi-row selection (for copy / delete) ─────────────────────────────────
@@ -283,7 +286,8 @@
         <div class="hcell gutter" role="columnheader"></div>
         {#each visible as v (v.name)}
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-          <div class="hcell" class:sortable role="columnheader" tabindex="-1" title={v.name} on:click={() => sortable && dispatch("sortColumn", v.name)}>
+          <div class="hcell" class:sortable class:fk={fkColumns.has(v.name)} role="columnheader" tabindex="-1" title={fkColumns.has(v.name) ? `${v.name} (foreign key)` : v.name} on:click={() => sortable && dispatch("sortColumn", v.name)}>
+            {#if fkColumns.has(v.name)}<span class="fk-key" aria-hidden="true">⚷</span>{/if}
             <span class="hname">{v.name}</span>
             {#if sort && sort.col === v.name}<span class="sortind">{sort.dir === "asc" ? "↑" : "↓"}</span>{/if}
           </div>
@@ -326,6 +330,10 @@
                     <input class="cell-input" bind:this={input} bind:value={draft} on:keydown={onKey} on:blur={commitCell} spellcheck="false" />
                   {:else}
                     {display(i, j, cell)}
+                    {#if fkColumns.has(v.name) && !isNull(cell)}
+                      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                      <span class="fk-jump" role="button" tabindex="-1" title="Jump to referenced row" on:click|stopPropagation={() => dispatch("followFk", { column: v.name, value: fmt(cell) })}>↗</span>
+                    {/if}
                   {/if}
                 </div>
               {/each}
@@ -438,6 +446,7 @@
   .hcell.sortable:hover { color: var(--ink); background: var(--bg-elevated); }
   .hname { overflow: hidden; text-overflow: ellipsis; }
   .sortind { margin-left: auto; color: var(--accent); font-size: 11px; flex: none; }
+  .fk-key { color: var(--accent); font-size: 10px; flex: none; opacity: 0.8; }
 
   .body { position: relative; width: 100%; }
   .row {
@@ -457,8 +466,17 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     border-right: 1px solid var(--hairline); user-select: text;
   }
+  .cell { position: relative; }
   .cell.can-edit { cursor: cell; }
   .cell.null { color: var(--faint); font-style: italic; }
+  .fk-jump {
+    position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+    display: grid; place-items: center; min-width: 15px; height: 16px; padding: 0 2px;
+    color: var(--accent); background: var(--bg-elevated); border-radius: var(--r-xs);
+    font-size: 11px; cursor: pointer; opacity: 0;
+  }
+  .row:hover .fk-jump { opacity: 0.8; }
+  .fk-jump:hover { opacity: 1; }
 
   /* Staged edit — tinted, not a side-stripe */
   .cell.edited {
