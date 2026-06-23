@@ -1,36 +1,17 @@
-<div align="center">
-
-<img src="docs/logo.png" alt="Kueri" width="120" height="120" />
-
-<h1>Kueri</h1>
+<img src="docs/logo.png" alt="Kueri" width="120" />\# Kueri
 
 **A lightweight, native, open-source multi-database GUI client.**
 
-The speed and minimalism of TablePlus — open source.
-One clean UI for every database, with backend differences hidden behind a single `Driver` trait.
-Built on Tauri (not Electron): a tiny binary and low memory, using the system webview.
+The speed and minimalism of TablePlus — open source. One clean UI for every database, with backend differences hidden behind a single `Driver` trait. Built on Tauri (not Electron): a tiny binary and low memory, using the system webview.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
-![Svelte](https://img.shields.io/badge/Svelte-4-FF3E00?logo=svelte&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-sqlx-000000?logo=rust&logoColor=white)
-![Platform](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-grey)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)![Svelte](https://img.shields.io/badge/Svelte-4-FF3E00?logo=svelte&logoColor=white)![Rust](https://img.shields.io/badge/Rust-sqlx-000000?logo=rust&logoColor=white)![Platform](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-grey)[Features](#features) · [Getting started](#getting-started) · [Shortcuts](#keyboard-shortcuts) · [Architecture](#architecture) · [Contributing](#contributing)
 
-[Features](#features) · [Getting started](#getting-started) · [Shortcuts](#keyboard-shortcuts) · [Architecture](#architecture) · [Contributing](#contributing)
-
-</div>
-
-> [!NOTE]
-> **Status:** active development. PostgreSQL, MySQL/MariaDB and SQLite are fully usable for daily work. SQL Server and Redis/MongoDB are documented stubs.
-
-<!-- Replace with a real screenshot once captured: docs/screenshot.png -->
-<!-- <p align="center"><img src="docs/screenshot.png" alt="Kueri screenshot" width="900" /></p> -->
+> [!NOTE] 💡
+> Status: active development. PostgreSQL, MySQL/MariaDB and SQLite are fully usable for daily work. SQL Server and Redis/MongoDB are documented stubs.
 
 ## Why Kueri?
 
-Most database GUIs are either heavy (Electron/Java), closed-source, or paid. Kueri keeps a single, calm,
-keyboard-first interface and pushes every database-specific detail behind one Rust abstraction — so the app
-stays small and behaves identically whether you're on Postgres, MySQL, or SQLite.
+Most database GUIs are either heavy (Electron/Java), closed-source, or paid. Kueri keeps a single, calm, keyboard-first interface and pushes every database-specific detail behind one Rust abstraction — so the app stays small and behaves identically whether you're on Postgres, MySQL, or SQLite.
 
 ## Features
 
@@ -51,16 +32,62 @@ stays small and behaves identically whether you're on Postgres, MySQL, or SQLite
 
 ## Supported databases
 
-| Database         | Status         | Backend            |
-| ---------------- | -------------- | ------------------ |
-| PostgreSQL       | ✅ Implemented | `sqlx`             |
-| MySQL / MariaDB  | ✅ Implemented | `sqlx`             |
-| SQLite           | ✅ Implemented | `sqlx`             |
-| SQL Server       | ⛔ Stub        | needs `tiberius`   |
-| Redis            | ⛔ Stub        | non-tabular UI     |
-| MongoDB          | ⛔ Stub        | document UI        |
+| Database | Status | Backend |
+| --- | --- | --- |
+| PostgreSQL | ✅ Implemented | `sqlx` |
+| MySQL / MariaDB | ✅ Implemented | `sqlx` |
+| SQLite | ✅ Implemented | `sqlx` |
+| SQL Server | ⛔ Stub | needs `tiberius` |
+| Redis | ⛔ Stub | non-tabular UI |
+| MongoDB | ⛔ Stub | document UI |
 
 > Adding a relational database is one file: implement the `Driver` trait and add a `DbKind` variant — no UI or command changes required.
+
+## Install
+
+Grab the installer for your platform from the [**latest release**](https://github.com/umarta/kueri/releases/latest).
+
+> Builds are currently **unsigned** (normal for an open-source project), so each OS asks for confirmation on first launch — steps below.
+
+### macOS
+
+1. Download **`Kueri_<version>_aarch64.dmg`** (Apple Silicon) or **`Kueri_<version>_x64.dmg`** (Intel).
+2. Open the `.dmg` and drag **Kueri** into **Applications**.
+3. First launch: **right-click `Kueri.app` → Open → Open** (Gatekeeper only blocks a double-click). If it still refuses:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Kueri.app
+   ```
+
+### Windows
+
+1. Download **`Kueri_<version>_x64-setup.exe`** (or the `.msi`).
+2. Run it. If **SmartScreen** appears, click **More info → Run anyway**.
+3. Launch **Kueri** from the Start menu.
+
+### Linux
+
+**AppImage** (portable, works on most distros):
+
+```bash
+chmod +x Kueri_<version>_amd64.AppImage
+./Kueri_<version>_amd64.AppImage
+```
+
+**Debian / Ubuntu** (`.deb`):
+
+```bash
+sudo apt install ./Kueri_<version>_amd64.deb
+kueri
+```
+
+**Fedora / RHEL** (`.rpm`):
+
+```bash
+sudo dnf install ./Kueri-<version>-1.x86_64.rpm
+kueri
+```
+
+> Kueri uses WebKitGTK (`libwebkit2gtk-4.1`). The `.deb`/`.rpm` pull it in automatically; for the AppImage, install it first if the app won't start (e.g. `sudo apt install libwebkit2gtk-4.1-0`).
 
 ## Getting started
 
@@ -89,23 +116,23 @@ npm run tauri build
 
 ## Keyboard shortcuts
 
-| Shortcut       | Action                          |
-| -------------- | ------------------------------- |
-| `⌘P`           | Open anything (search a table)  |
-| `⌘T` / `⌘E`    | New tab / new SQL editor        |
-| `⌘W`           | Close tab                       |
-| `⌘[` / `⌘]`    | Previous / next tab             |
-| `⌘1`–`⌘9`      | Jump to tab                     |
-| `⌘N`           | New connection                  |
-| `⌘K`           | Switch schema                   |
-| `⌘R`           | Reload workspace                |
-| `⌘↵`           | Run query                       |
-| `⌘S`           | Commit changes                  |
-| `⌘I`           | Add row                         |
-| `⌘F`           | Toggle filters                  |
-| `Space`        | Toggle row detail               |
-| `⌘⌃[` / `⌘⌃]`  | Data / Structure view           |
-| `⌘,`           | Settings                        |
+| Shortcut | Action |
+| --- | --- |
+| `⌘P` | Open anything (search a table) |
+| `⌘T` / `⌘E` | New tab / new SQL editor |
+| `⌘W` | Close tab |
+| `⌘[` / `⌘]` | Previous / next tab |
+| `⌘1`–`⌘9` | Jump to tab |
+| `⌘N` | New connection |
+| `⌘K` | Switch schema |
+| `⌘R` | Reload workspace |
+| `⌘↵` | Run query |
+| `⌘S` | Commit changes |
+| `⌘I` | Add row |
+| `⌘F` | Toggle filters |
+| `Space` | Toggle row detail |
+| `⌘⌃[` / `⌘⌃]` | Data / Structure view |
+| `⌘,` | Settings |
 
 ## Architecture
 
@@ -116,8 +143,7 @@ Svelte component → api.* (src/lib/tauri.ts) → Tauri command
    → returns the same shapes (SchemaInfo / TableInfo / QueryResult)
 ```
 
-The `Driver` trait (`src-tauri/src/db/driver.rs`) is the seam. Components and Tauri commands are
-database-agnostic; all backend differences — including SQL dialect for DDL — live behind the trait.
+The `Driver` trait (`src-tauri/src/db/driver.rs`) is the seam. Components and Tauri commands are database-agnostic; all backend differences — including SQL dialect for DDL — live behind the trait.
 
 ```text
 src/
@@ -147,16 +173,20 @@ No UI or command changes are needed.
 ## Roadmap
 
 - [ ] Duplicate / delete rows
+
 - [ ] Sort by clicking a column header
+
 - [ ] Show / hide and reorder columns
+
 - [ ] SQL Server driver (`tiberius`)
+
 - [ ] SSH tunnels
+
 - [ ] NoSQL mode (Redis key browser, MongoDB document view)
 
 ## Contributing
 
-Contributions are welcome! Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) — bug reports and feature
-requests via [issues](https://github.com/umarta/kueri/issues), code via pull requests.
+Contributions are welcome! Please read `CONTRIBUTING.md` — bug reports and feature requests via [issues](https://github.com/umarta/kueri/issues), code via pull requests.
 
 ## License
 
