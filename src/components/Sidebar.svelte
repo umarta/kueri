@@ -129,6 +129,10 @@
   $: visibleTables = filter
     ? tables.filter((t) => t.name.toLowerCase().includes(filter.toLowerCase()))
     : tables;
+  const isView = (k: string | undefined) => /view/i.test(k ?? "");
+  // Tables first, then views; a header is shown at the views boundary.
+  $: grouped = [...visibleTables.filter((t) => !isView(t.kind)), ...visibleTables.filter((t) => isView(t.kind))];
+  $: hasViews = visibleTables.some((t) => isView(t.kind));
 
   // ── Add table ───────────────────────────────────────────────────────────────
   function openAdd() {
@@ -293,17 +297,26 @@
     {#if loading}
       {#each Array(6) as _, i (i)}<div class="skeleton" style="--w: {60 + ((i * 13) % 35)}%"></div>{/each}
     {:else}
-      {#each visibleTables as t (t.name)}
+      {#each grouped as t, gi (t.name)}
+        {#if hasViews && gi === 0 && !isView(t.kind)}<div class="group-head">Tables</div>{/if}
+        {#if isView(t.kind) && (gi === 0 || !isView(grouped[gi - 1].kind))}<div class="group-head">Views</div>{/if}
         <div class="row" class:selected={selectedKey === `${activeSchema}.${t.name}`}>
           <button class="table" on:click={() => select(activeSchema, t.name)}>
-            <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-              <rect x="2.5" y="3" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
-              <line x1="2.5" y1="6.3" x2="13.5" y2="6.3" stroke="currentColor" stroke-width="1.2"/>
-              <line x1="6.5" y1="6.3" x2="6.5" y2="13" stroke="currentColor" stroke-width="1.2"/>
-            </svg>
+            {#if isView(t.kind)}
+              <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M1.6 8S4 3.5 8 3.5 14.4 8 14.4 8 12 12.5 8 12.5 1.6 8 1.6 8z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+            {:else}
+              <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                <rect x="2.5" y="3" width="11" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="2.5" y1="6.3" x2="13.5" y2="6.3" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="6.5" y1="6.3" x2="6.5" y2="13" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+            {/if}
             <span class="tname">{t.name}</span>
           </button>
-          {#if !$readOnly}
+          {#if !$readOnly && !isView(t.kind)}
           <div class="actions">
             <button class="act" title="Rename" aria-label="Rename {t.name}" on:click|stopPropagation={() => openRename(t.name)}>
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
@@ -508,6 +521,7 @@
   .act.danger:hover { background: color-mix(in srgb, var(--danger, #e5484d) 18%, transparent); color: var(--danger, #e5484d); }
 
   .none { margin: 0; padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--faint); }
+  .group-head { padding: var(--s-2) var(--s-3) 2px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
   .loaderr { margin: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; }
 
   .skeleton {
