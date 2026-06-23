@@ -204,6 +204,14 @@ fn decode(row: &MySqlRow, idx: usize) -> Value {
         }
         return Value::from(v);
     }
+    // Unsigned integers (e.g. `bigint unsigned`) don't fit i64; try u64 BEFORE bool,
+    // otherwise sqlx happily decodes any integer as a bool (non-zero → true).
+    if let Ok(v) = row.try_get::<u64, _>(idx) {
+        if v > 9_007_199_254_740_991 {
+            return Value::String(v.to_string());
+        }
+        return Value::from(v);
+    }
     if let Ok(v) = row.try_get::<f64, _>(idx) {
         return Value::from(v);
     }
