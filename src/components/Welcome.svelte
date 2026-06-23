@@ -20,8 +20,39 @@
   let error: string | null = null;
 
   $: list = $savedConnections.filter((c) =>
-    `${c.name} ${c.tag ?? ""} ${c.host} ${c.database}`.toLowerCase().includes(query.toLowerCase())
+    `${c.name} ${c.tag ?? ""} ${c.group ?? ""} ${c.host} ${c.database}`.toLowerCase().includes(query.toLowerCase())
   );
+
+  // Group the list into folders (ungrouped first, then named groups; collapsible).
+  type Row = { type: "header"; name: string; count: number; open: boolean } | { type: "conn"; c: ConnectionConfig };
+  let collapsed = new Set<string>(loadCollapsed());
+  function loadCollapsed(): string[] {
+    try { return JSON.parse(localStorage.getItem("kueri.conngroups") || "[]"); } catch { return []; }
+  }
+  function toggleGroup(g: string) {
+    const s = new Set(collapsed);
+    if (s.has(g)) s.delete(g); else s.add(g);
+    collapsed = s;
+    try { localStorage.setItem("kueri.conngroups", JSON.stringify([...collapsed])); } catch { /* ignore */ }
+  }
+  $: rows = buildRows(list, collapsed);
+  function buildRows(items: ConnectionConfig[], col: Set<string>): Row[] {
+    const groups = new Map<string, ConnectionConfig[]>();
+    for (const c of items) {
+      const g = (c.group ?? "").trim();
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(c);
+    }
+    const out: Row[] = [];
+    for (const c of groups.get("") ?? []) out.push({ type: "conn", c });
+    groups.delete("");
+    for (const g of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+      const open = !col.has(g);
+      out.push({ type: "header", name: g, count: groups.get(g)!.length, open });
+      if (open) for (const c of groups.get(g)!) out.push({ type: "conn", c });
+    }
+    return out;
+  }
 
   function subtitle(c: ConnectionConfig): string {
     if (c.kind === "sqlite") return c.file_path || c.database || "—";
@@ -153,7 +184,17 @@
       </div>
     {:else}
       <ul class="conns">
-        {#each list as c (c.id)}
+        {#each rows as row (row.type === "header" ? "h:" + row.name : row.c.id)}
+          {#if row.type === "header"}
+            <li class="ghead">
+              <button class="ghead-btn" on:click={() => toggleGroup(row.name)}>
+                <span class="chev" class:open={row.open}>▸</span>
+                <span class="gname">{row.name}</span>
+                <span class="gcount">{row.count}</span>
+              </button>
+            </li>
+          {:else}
+            {@const c = row.c}
           <li>
             <button class="conn" on:click={() => open(c)} disabled={!!connectingId}>
               <span class="dot" style="--c: {statusVar(c.color)}" title={c.tag ?? ""}></span>
@@ -179,6 +220,7 @@
               {/if}
             </button>
           </li>
+          {/if}
         {/each}
       </ul>
     {/if}
@@ -253,6 +295,12 @@
   .add { width: 32px; height: 32px; padding: 0; flex: none; }
 
   .conns { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .ghead { margin-top: var(--s-2); }
+  .ghead-btn { display: flex; align-items: center; gap: var(--s-2); width: 100%; padding: var(--s-1) var(--s-2); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); background: none; border: none; }
+  .ghead-btn:hover { color: var(--muted); }
+  .chev { display: inline-block; font-size: 9px; transition: transform var(--t-fast) var(--ease-out); }
+  .chev.open { transform: rotate(90deg); }
+  .gcount { margin-left: auto; font-weight: 600; color: var(--faint); }
   .conn {
     width: 100%; display: flex; align-items: center; gap: var(--s-4);
     padding: var(--s-3) var(--s-3); border-radius: var(--r-md); text-align: left;

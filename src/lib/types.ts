@@ -27,9 +27,11 @@ export interface ConnectionConfig {
   ssh_user?: string;
   ssh_key?: string | null;
   // UI-only metadata (ignored by the Rust backend — serde drops unknown fields).
-  // `tag` is the environment label, `color` is its status-dot token name.
+  // `tag` is the environment label, `color` is its status-dot token name,
+  // `group` is an optional folder in the connection list.
   tag?: string;
   color?: StatusColor;
+  group?: string;
 }
 
 // Connection environment colors. Meaning-bearing, never decorative:
