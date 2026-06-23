@@ -443,6 +443,9 @@
             <label class="fk-skip"><input type="checkbox" bind:checked={fkValidate} /> Validate existing rows</label>
           {/if}
           {#if error}<p class="fk-err">{error}</p>{/if}
+          {#if error && fkValidate && kind === "postgres" && /foreign key/i.test(error)}
+            <p class="fk-tip">Existing rows violate this key — uncheck “Validate existing rows” to add it anyway (NOT VALID).</p>
+          {/if}
           <div class="fk-act">
             <button class="idx-cancel" on:click={() => (fkMenu = null)} disabled={busy}>Cancel</button>
             <button class="idx-save" on:click={saveFk} disabled={busy || !fkRefTable || !fkRefCol}>Create</button>
@@ -539,6 +542,7 @@
   .fk-skip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
   .fk-skip input { accent-color: var(--accent); }
   .fk-err { margin: 0; font-size: 11px; color: var(--danger); white-space: pre-wrap; }
+  .fk-tip { margin: 0; font-size: 11px; color: var(--accent); line-height: 1.4; }
   .fk-act { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: 2px; }
   .mono { font-family: var(--font-mono); color: var(--ink-soft); }
   .dim { color: var(--faint); }
