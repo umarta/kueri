@@ -119,6 +119,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .item(&item(app, "run_query", "Run Query", None)?)
         .item(&item(
             app,
+            "cancel_query",
+            "Cancel Query",
+            Some("CmdOrCtrl+Period"),
+        )?)
+        .item(&item(
+            app,
             "format_sql",
             "Format SQL",
             Some("CmdOrCtrl+Shift+F"),

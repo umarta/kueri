@@ -33,8 +33,9 @@ export const api = {
     invoke<void>("add_foreign_key", { id, schema, table, column, refTable, refColumn, name, validate }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
-  executeQuery: (id: string, sql: string) =>
-    invoke<QueryResult>("execute_query", { id, sql }),
+  executeQuery: (id: string, sql: string, queryId: string) =>
+    invoke<QueryResult>("execute_query", { id, sql, queryId }),
+  cancelQuery: (queryId: string) => invoke<void>("cancel_query", { queryId }),
 
   // DDL — database-agnostic; the Rust driver renders the right SQL per dialect.
   createTable: (id: string, schema: string, name: string, columns: ColumnDraft[]) =>
