@@ -44,6 +44,12 @@ export const api = {
   setColumnNullable: (id: string, schema: string, table: string, column: string, currentType: string, notNull: boolean) =>
     invoke<void>("set_column_nullable", { id, schema, table, column, currentType, notNull }),
 
+  // PostgreSQL backup & restore (shells out to pg_dump / pg_restore / psql).
+  pgExport: (cfg: ConnectionConfig, path: string, format: string, contents: string) =>
+    invoke<string>("pg_export", { cfg, path, format, contents }),
+  pgImport: (cfg: ConnectionConfig, path: string) =>
+    invoke<string>("pg_import", { cfg, path }),
+
   // Persistence (connections file) + OS keychain (passwords).
   loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),
   saveConnections: (connections: Omit<ConnectionConfig, "password">[]) =>

@@ -109,6 +109,9 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .separator()
         .item(&item(app, "run_query", "Run Query", None)?)
         .separator()
+        .item(&item(app, "export_db", "Export Database…", None)?)
+        .item(&item(app, "import_db", "Import / Restore…", None)?)
+        .separator()
         .item(&item(app, "refresh", "Reload", Some("CmdOrCtrl+R"))?)
         .item(&item(app, "disconnect", "Disconnect", None)?)
         .build()?;
