@@ -29,6 +29,11 @@
     const n = parseInt(v, 10);
     if (Number.isFinite(n) && n > 0) settings.update((s) => ({ ...s, rowLimit: Math.min(n, 100000) }));
   }
+
+  function setTheme(v: string) {
+    const theme = v === "light" || v === "dark" ? v : "auto";
+    settings.update((s) => ({ ...s, theme }));
+  }
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
@@ -46,6 +51,14 @@
 
     <div class="body">
       {#if section === "general"}
+        <div class="row">
+          <div class="lbl"><span class="name">Theme</span><span class="desc">Auto follows your operating system.</span></div>
+          <select class="num" value={$settings.theme} on:change={(e) => setTheme(e.currentTarget.value)}>
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
         <div class="row">
           <div class="lbl"><span class="name">Default row limit</span><span class="desc">Rows fetched when browsing a table.</span></div>
           <input class="num" type="number" min="1" value={$settings.rowLimit} on:change={(e) => setLimit(e.currentTarget.value)} />

@@ -855,6 +855,23 @@
   });
   onDestroy(() => unlistenMenu?.());
 
+  // ── Theme (auto / light / dark) ───────────────────────────────────────────────
+  function applyTheme(t: string) {
+    const resolved = t === "light" || t === "dark"
+      ? t
+      : window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
+    document.documentElement.dataset.theme = resolved;
+  }
+  $: applyTheme($settings.theme);
+  onMount(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => { if ($settings.theme === "auto") applyTheme("auto"); };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  });
+
   // ── Keyboard shortcuts (the rest stay in the frontend; menu owns the globals) ─
   function isTextField(el: Element | null): boolean {
     if (!el) return false;

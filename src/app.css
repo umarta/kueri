@@ -85,6 +85,37 @@
   text-rendering: optimizeLegibility;
 }
 
+/* Light theme — only the color tokens flip; spacing/radii/fonts are shared. */
+:root[data-theme="light"] {
+  --bg-app: #e7e7ea;
+  --bg-content: #ffffff;
+  --bg-panel: #f3f3f5;
+  --bg-elevated: #ffffff;
+  --bg-hover: #ededf0;
+  --bg-active: #e2e2e6;
+
+  --border: #d9d9de;
+  --border-strong: #c2c2ca;
+  --hairline: rgba(0, 0, 0, 0.08);
+
+  --ink: #1b1b1f;
+  --ink-soft: #3a3a42;
+  --muted: #65656e;
+  --faint: #9595a0;
+
+  --accent-soft: rgba(10, 132, 255, 0.14);
+
+  --danger: #d70015;
+  --danger-soft: rgba(215, 0, 21, 0.10);
+  --warn: #9a6700;
+  --success: #1a7f37;
+
+  --shadow-pop: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 8px 28px rgba(0, 0, 0, 0.16);
+  --shadow-modal: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 20px 60px rgba(0, 0, 0, 0.22);
+
+  color-scheme: light;
+}
+
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body {
