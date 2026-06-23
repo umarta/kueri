@@ -46,6 +46,10 @@ pub struct IndexInfo {
     pub name: String,
     pub columns: Vec<String>,
     pub unique: bool,
+    /// Access method (btree/hash/gin/…); shown as "index_algorithm".
+    pub method: String,
+    /// Partial-index predicate (empty when not partial); shown as "condition".
+    pub predicate: String,
 }
 
 /// Every relational backend implements this. The UI and Tauri commands only

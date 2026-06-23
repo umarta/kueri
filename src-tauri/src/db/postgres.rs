@@ -125,17 +125,20 @@ impl Driver for PgDriver {
     }
 
     async fn list_indexes(&self, schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
-        let rows: Vec<(String, bool, String)> = sqlx::query_as(
-            "SELECT i.relname, ix.indisunique, \
+        let rows: Vec<(String, bool, String, Option<String>, String)> = sqlx::query_as(
+            "SELECT i.relname, ix.indisunique, am.amname, \
+                    pg_get_expr(ix.indpred, ix.indrelid), \
                     array_to_string(array_agg(a.attname ORDER BY x.ord), ',') \
              FROM pg_index ix \
              JOIN pg_class i ON i.oid = ix.indexrelid \
+             JOIN pg_am am ON am.oid = i.relam \
              JOIN pg_class t ON t.oid = ix.indrelid \
              JOIN pg_namespace n ON n.oid = t.relnamespace \
              JOIN unnest(ix.indkey) WITH ORDINALITY AS x(attnum, ord) ON true \
              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum \
              WHERE n.nspname = $1 AND t.relname = $2 \
-             GROUP BY i.relname, ix.indisunique ORDER BY i.relname",
+             GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid \
+             ORDER BY i.relname",
         )
         .bind(schema)
         .bind(table)
@@ -143,9 +146,11 @@ impl Driver for PgDriver {
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(name, unique, cols)| IndexInfo {
+            .map(|(name, unique, method, predicate, cols)| IndexInfo {
                 name,
                 unique,
+                method,
+                predicate: predicate.unwrap_or_default(),
                 columns: cols.split(',').map(|s| s.to_string()).collect(),
             })
             .collect())

@@ -126,6 +126,8 @@ impl Driver for SqliteDriver {
             out.push(IndexInfo {
                 name,
                 unique: unique == 1,
+                method: "btree".into(),
+                predicate: String::new(),
                 columns,
             });
         }

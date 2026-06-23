@@ -120,9 +120,9 @@ impl Driver for MySqlDriver {
     }
 
     async fn list_indexes(&self, schema: &str, table: &str) -> AppResult<Vec<IndexInfo>> {
-        let rows: Vec<(String, i64, String, i64)> = sqlx::query_as(
+        let rows: Vec<(String, i64, String, i64, String)> = sqlx::query_as(
             "SELECT CAST(index_name AS CHAR), CAST(non_unique AS SIGNED), \
-                    CAST(column_name AS CHAR), seq_in_index \
+                    CAST(column_name AS CHAR), seq_in_index, CAST(index_type AS CHAR) \
              FROM information_schema.statistics \
              WHERE table_schema = ? AND table_name = ? \
              ORDER BY index_name, seq_in_index",
@@ -132,13 +132,15 @@ impl Driver for MySqlDriver {
         .fetch_all(&self.pool)
         .await?;
         let mut out: Vec<IndexInfo> = Vec::new();
-        for (name, non_unique, col, _seq) in rows {
+        for (name, non_unique, col, _seq, method) in rows {
             if let Some(ix) = out.iter_mut().find(|i| i.name == name) {
                 ix.columns.push(col);
             } else {
                 out.push(IndexInfo {
                     name,
                     unique: non_unique == 0,
+                    method,
+                    predicate: String::new(),
                     columns: vec![col],
                 });
             }

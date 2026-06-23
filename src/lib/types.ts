@@ -96,6 +96,8 @@ export interface IndexInfo {
   name: string;
   columns: string[];
   unique: boolean;
+  method: string;
+  predicate: string;
 }
 
 /** A single filter condition in the filter bar. */
