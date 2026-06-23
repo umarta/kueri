@@ -3,6 +3,7 @@ import { writable } from "svelte/store";
 export interface LogEntry {
   id: number;
   time: string; // HH:MM:SS
+  date: string; // YYYY-MM-DD (for History grouping)
   sql: string;
   ms?: number;
   error?: string;
@@ -34,16 +35,19 @@ queryLog.subscribe((l) => {
 
 let seq = initial.reduce((m, e) => Math.max(m, e.id), 0);
 
-function clock(): string {
+function stamp(): { time: string; date: string } {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return {
+    time: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
+    date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+  };
 }
 
 /** Record a SQL statement that the app executed (newest appended at the end). */
 export function logSql(sql: string, opts: { ms?: number; error?: string } = {}) {
   queryLog.update((l) => {
-    const next = [...l, { id: ++seq, time: clock(), sql: sql.trim(), ms: opts.ms, error: opts.error }];
+    const next = [...l, { id: ++seq, ...stamp(), sql: sql.trim(), ms: opts.ms, error: opts.error }];
     return next.length > MAX ? next.slice(next.length - MAX) : next;
   });
 }

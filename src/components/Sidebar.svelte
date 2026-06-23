@@ -3,13 +3,78 @@
   import { api } from "../lib/tauri";
   import { activeConnectionId, activeConnection, catalogTables, activeSchema as activeSchemaStore, readOnly } from "../lib/stores/connection";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
+  import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
+  import { queryLog } from "../lib/stores/log";
   import Modal from "./Modal.svelte";
-  import type { SchemaInfo, TableInfo, DbKind } from "../lib/types";
+  import type { SchemaInfo, TableInfo, DbKind, ColumnInfo } from "../lib/types";
+
+  /** SQL of the active query tab (for "save current query"). */
+  export let currentSql = "";
 
   const dispatch = createEventDispatcher<{
     selectTable: { schema: string; table: string };
     openTableFull: { schema: string; table: string };
+    openQuery: string;
   }>();
+
+  // ── Left-panel tabs (Items / Queries / History) ──────────────────────────────
+  let panel: "items" | "queries" | "history" = "items";
+
+  // Expandable table columns (Items tab)
+  let expanded = new Set<string>();
+  let colCache: Record<string, ColumnInfo[]> = {};
+  let pkCache: Record<string, string[]> = {};
+  async function toggleExpand(name: string, e: MouseEvent) {
+    e.stopPropagation();
+    const key = `${activeSchema}.${name}`;
+    const s = new Set(expanded);
+    if (s.has(key)) {
+      s.delete(key);
+    } else {
+      s.add(key);
+      if (!colCache[key] && $activeConnectionId) {
+        colCache[key] = await api.listColumns($activeConnectionId, activeSchema, name).catch(() => []);
+        pkCache[key] = await api.primaryKeys($activeConnectionId, activeSchema, name).catch(() => []);
+        colCache = colCache;
+        pkCache = pkCache;
+      }
+    }
+    expanded = s;
+  }
+
+  // Queries + History tab search
+  let qFilter = "";
+  let hFilter = "";
+  $: savedShown = qFilter.trim()
+    ? $savedQueries.filter((q) => `${q.name} ${q.sql}`.toLowerCase().includes(qFilter.trim().toLowerCase()))
+    : $savedQueries;
+  $: historyShown = hFilter.trim()
+    ? $queryLog.filter((h) => h.sql.toLowerCase().includes(hFilter.trim().toLowerCase()))
+    : $queryLog;
+  // Newest first, grouped by date.
+  $: historyGroups = groupHistory(historyShown);
+  function groupHistory(list: typeof $queryLog) {
+    const byDate = new Map<string, typeof $queryLog>();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i];
+      const d = e.date ?? "—";
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d)!.push(e);
+    }
+    return [...byDate.entries()];
+  }
+  function fmtDate(d: string): string {
+    const [y, m, day] = d.split("-").map(Number);
+    if (!y) return d;
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return `${day} ${months[(m || 1) - 1]} ${y}`;
+  }
+  let qNameInput = "";
+  function saveCurrent() {
+    if (!currentSql.trim() || !qNameInput.trim()) return;
+    addSaved(qNameInput.trim(), currentSql.trim());
+    qNameInput = "";
+  }
 
   let schemas: SchemaInfo[] = [];
   let activeSchema = "";
@@ -270,6 +335,13 @@
 </script>
 
 <aside class="sidebar">
+  <div class="ptabs">
+    <button class:on={panel === "items"} on:click={() => (panel = "items")}>Items</button>
+    <button class:on={panel === "queries"} on:click={() => (panel = "queries")}>Queries</button>
+    <button class:on={panel === "history"} on:click={() => (panel = "history")}>History</button>
+  </div>
+
+  {#if panel === "items"}
   <div class="schemabar">
     <div class="schema-wrap">
       <svg class="dbicon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
@@ -308,6 +380,9 @@
         {#if hasViews && gi === 0 && !isView(t.kind)}<div class="group-head">Tables</div>{/if}
         {#if isView(t.kind) && (gi === 0 || !isView(grouped[gi - 1].kind))}<div class="group-head">Views</div>{/if}
         <div class="row" class:selected={selectedKey === `${activeSchema}.${t.name}`}>
+          <button class="twirl" class:open={expanded.has(`${activeSchema}.${t.name}`)} on:click={(e) => toggleExpand(t.name, e)} aria-label="Expand columns">
+            <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M4.5 3l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <button class="table" on:click={() => select(activeSchema, t.name)} on:dblclick={() => selectFull(activeSchema, t.name)}>
             {#if isView(t.kind)}
               <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
@@ -340,6 +415,17 @@
           </div>
           {/if}
         </div>
+        {#if expanded.has(`${activeSchema}.${t.name}`)}
+          {#each colCache[`${activeSchema}.${t.name}`] ?? [] as c (c.name)}
+            <div class="colrow">
+              {#if (pkCache[`${activeSchema}.${t.name}`] ?? []).includes(c.name)}
+                <svg class="pkey" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><circle cx="5" cy="6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7.2 7.2 12 12M10 10l1.4-1.4M11.4 11.4 13 9.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              {:else}<span class="pkey-sp"></span>{/if}
+              <span class="colname">{c.name}</span>
+              <span class="coltype">{c.data_type}</span>
+            </div>
+          {/each}
+        {/if}
       {/each}
       {#if loadError}
         <p class="loaderr" title={loadError}>Couldn't load tables: {loadError}</p>
@@ -348,6 +434,53 @@
       {/if}
     {/if}
   </nav>
+
+  {:else if panel === "queries"}
+    <div class="filter">
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input bind:value={qFilter} placeholder="Search for query…" spellcheck="false" />
+    </div>
+    {#if currentSql.trim()}
+      <div class="saverow">
+        <input bind:value={qNameInput} placeholder="Save current query as…" spellcheck="false" on:keydown={(e) => { if (e.key === "Enter") saveCurrent(); }} />
+        <button class="savebtn" on:click={saveCurrent} disabled={!qNameInput.trim()} aria-label="Save">+</button>
+      </div>
+    {/if}
+    <nav class="tree" aria-label="Saved queries">
+      {#each savedShown as q (q.id)}
+        <div class="row qrow">
+          <button class="table" on:click={() => dispatch("openQuery", q.sql)} title={q.sql}>
+            <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 5l3 3-3 3M8.5 11h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="tname">{q.name}</span>
+          </button>
+          <div class="actions">
+            <button class="act danger" title="Delete" aria-label="Delete {q.name}" on:click|stopPropagation={() => removeSaved(q.id)}>
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 4.5h10M6.5 4V2.8h3V4M5 4.5l.5 8.5h5l.5-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      {/each}
+      {#if savedShown.length === 0}<p class="none">{qFilter ? "No matches" : "No saved queries — save one from the editor."}</p>{/if}
+    </nav>
+
+  {:else}
+    <div class="filter">
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input bind:value={hFilter} placeholder="Search for history…" spellcheck="false" />
+    </div>
+    <nav class="tree" aria-label="Query history">
+      {#each historyGroups as [date, items] (date)}
+        <div class="group-head">{fmtDate(date)}</div>
+        {#each items as h (h.id)}
+          <button class="hrow" class:err={h.error} on:click={() => dispatch("openQuery", h.sql)} title={h.sql}>
+            <span class="htime">{h.time}</span>
+            <code class="hsql">{h.sql}</code>
+          </button>
+        {/each}
+      {/each}
+      {#if historyGroups.length === 0}<p class="none">{hFilter ? "No matches" : "No history yet."}</p>{/if}
+    </nav>
+  {/if}
 </aside>
 
 <!-- New table: column designer -->
@@ -505,6 +638,34 @@
   .filter input::placeholder { color: var(--faint); }
 
   .tree { flex: 1; overflow-y: auto; padding: 0 var(--s-2) var(--s-3); }
+
+  .ptabs { display: flex; gap: 2px; padding: var(--s-2) var(--s-2) 0; flex: none; }
+  .ptabs button { flex: 1; padding: var(--s-2) 0; font-size: 12px; font-weight: 600; color: var(--muted); border-radius: var(--r-sm); background: none; }
+  .ptabs button:hover { color: var(--ink); background: var(--bg-elevated); }
+  .ptabs button.on { color: var(--accent); }
+
+  .twirl { width: 16px; height: 22px; display: grid; place-items: center; color: var(--faint); flex: none; }
+  .twirl svg { transition: transform var(--t-fast) var(--ease-out); }
+  .twirl.open svg { transform: rotate(90deg); }
+  .twirl:hover { color: var(--ink); }
+  .colrow { display: flex; align-items: center; gap: var(--s-2); padding: 2px var(--s-3) 2px 28px; font-size: 11.5px; font-family: var(--font-mono); }
+  .colrow:hover { background: var(--bg-elevated); }
+  .pkey { color: var(--warn); flex: none; }
+  .pkey-sp { width: 11px; flex: none; }
+  .colname { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .coltype { margin-left: auto; color: var(--faint); flex: none; }
+
+  .saverow { display: flex; gap: var(--s-2); padding: 0 var(--s-2) var(--s-2); flex: none; }
+  .saverow input { flex: 1; min-width: 0; height: 26px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 12px; padding: 0 var(--s-2); }
+  .saverow input:focus { outline: none; border-color: var(--accent); }
+  .savebtn { width: 26px; flex: none; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 600; }
+  .savebtn:disabled { opacity: 0.5; }
+
+  .hrow { display: flex; align-items: baseline; gap: var(--s-2); width: 100%; text-align: left; padding: 3px var(--s-3); border-radius: var(--r-sm); background: none; }
+  .hrow:hover { background: var(--bg-elevated); }
+  .htime { font-size: 10px; color: var(--faint); flex: none; font-family: var(--font-mono); }
+  .hsql { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hrow.err .hsql { color: var(--danger); }
 
   .row { display: flex; align-items: center; border-radius: var(--r-sm); }
   .row:hover { background: var(--bg-elevated); }
