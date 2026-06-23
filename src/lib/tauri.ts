@@ -29,6 +29,8 @@ export const api = {
     invoke<void>("create_index", { id, schema, table, name, columns, unique }),
   dropIndex: (id: string, schema: string, table: string, name: string) =>
     invoke<void>("drop_index", { id, schema, table, name }),
+  addForeignKey: (id: string, schema: string, table: string, column: string, refTable: string, refColumn: string, name: string) =>
+    invoke<void>("add_foreign_key", { id, schema, table, column, refTable, refColumn, name }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
   executeQuery: (id: string, sql: string) =>

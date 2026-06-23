@@ -106,6 +106,49 @@
     if (await run(() => api.dropIndex(connectionId!, schema, table, name))) await loadMeta();
   }
 
+  // Foreign-key cell menu (view existing / create new)
+  $: fkCreatable = canEdit && kind !== "sqlite";
+  let fkMenu: { col: string; left: number; top: number } | null = null;
+  let fkCreating = false;
+  let fkTables: string[] = [];
+  let fkRefCols: string[] = [];
+  let fkRefTable = "";
+  let fkRefCol = "";
+  function openFkMenu(c: ColumnInfo, e: MouseEvent) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    fkMenu = { col: c.name, left: Math.min(r.left, window.innerWidth - 280), top: r.bottom + 2 };
+    fkCreating = false;
+  }
+  async function startCreateFk(col: string) {
+    if (!connectionId) return;
+    fkTables = (await api.listTables(connectionId, schema).catch(() => []))
+      .map((t) => t.name)
+      .filter((t) => t !== table);
+    // Guess the referenced table from a `<thing>_id` column name.
+    const base = col.endsWith("_id") ? col.slice(0, -3) : col;
+    fkRefTable = fkTables.find((t) => t === base || t === base + "s") ?? fkTables[0] ?? "";
+    fkCreating = true;
+    await loadRefCols();
+  }
+  async function loadRefCols() {
+    if (!connectionId || !fkRefTable) {
+      fkRefCols = [];
+      return;
+    }
+    fkRefCols = (await api.listColumns(connectionId, schema, fkRefTable).catch(() => [])).map((c) => c.name);
+    fkRefCol = fkRefCols.includes("id") ? "id" : (fkRefCols[0] ?? "");
+  }
+  async function saveFk() {
+    if (!fkMenu || !connectionId || !fkRefTable || !fkRefCol) return;
+    const col = fkMenu.col;
+    const name = `fk_${table}_${col}`;
+    if (await run(() => api.addForeignKey(connectionId!, schema, table, col, fkRefTable, fkRefCol, name))) {
+      fkMenu = null;
+      fkCreating = false;
+      await loadMeta();
+    }
+  }
+
   $: canEdit = !!(connectionId && schema && table) && !$readOnly;
   $: alterOk = canEdit && supportsColumnAlter(kind);
 
@@ -260,7 +303,13 @@
               <td class="dim">—</td>
               <td class:dim={!c.default}>{c.default ?? "—"}</td>
               <td class="fk">
-                {#if fkMap.has(c.name)}{fkMap.get(c.name)?.ref_table}({fkMap.get(c.name)?.ref_column}){:else}<span class="dim">—</span>{/if}
+                {#if fkCreatable || fkMap.has(c.name)}
+                  <button class="fk-cell" class:linked={fkMap.has(c.name)} on:click={(e) => openFkMenu(c, e)}>
+                    {#if fkMap.has(c.name)}{fkMap.get(c.name)?.ref_table}({fkMap.get(c.name)?.ref_column}){:else}<span class="dim">EMPTY</span>{/if}
+                  </button>
+                {:else}
+                  <span class="dim">{fkMap.has(c.name) ? "" : "—"}</span>
+                {/if}
               </td>
               <td class="dim">—</td>
               <td class="ax">
@@ -363,6 +412,42 @@
   <div class="empty">Select a table to inspect its structure.</div>
 {/if}
 
+{#if fkMenu}
+  {@const m = fkMenu}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="fk-backdrop" on:click={() => (fkMenu = null)}></div>
+  <div class="fk-menu" style="left: {m.left}px; top: {m.top}px;">
+    {#if fkMap.has(m.col)}
+      <div class="fk-existing">→ {fkMap.get(m.col)?.ref_schema}.{fkMap.get(m.col)?.ref_table}({fkMap.get(m.col)?.ref_column})</div>
+    {/if}
+    {#if fkCreatable}
+      {#if !fkCreating}
+        <button class="fk-create" on:click={() => startCreateFk(m.col)}>
+          <span class="fk-plus">＋</span> Create a foreign key on <code>{m.col}</code>
+        </button>
+      {:else}
+        <div class="fk-form">
+          <label class="fk-l">References
+            <select bind:value={fkRefTable} on:change={loadRefCols}>
+              {#each fkTables as t (t)}<option value={t}>{t}</option>{/each}
+            </select>
+          </label>
+          <label class="fk-l">Column
+            <select bind:value={fkRefCol}>
+              {#each fkRefCols as rc (rc)}<option value={rc}>{rc}</option>{/each}
+            </select>
+          </label>
+          {#if error}<p class="fk-err">{error}</p>{/if}
+          <div class="fk-act">
+            <button class="idx-cancel" on:click={() => (fkMenu = null)} disabled={busy}>Cancel</button>
+            <button class="idx-save" on:click={saveFk} disabled={busy || !fkRefTable || !fkRefCol}>Create</button>
+          </div>
+        </div>
+      {/if}
+    {/if}
+  </div>
+{/if}
+
 {#if confirmDrop}
   <div class="cdrop-backdrop" role="button" tabindex="-1" on:click|self={() => (confirmDrop = null)} on:keydown={() => {}}>
     <div class="cdrop" role="dialog" aria-modal="true">
@@ -430,6 +515,24 @@
   .ty { font-family: var(--font-mono); color: var(--accent); }
   .algo { font-family: var(--font-mono); color: var(--muted); font-size: 11px; }
   .fk { font-family: var(--font-mono); color: var(--accent); font-size: 11.5px; }
+  .fk-cell { font: inherit; font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); padding: 1px var(--s-2); border-radius: var(--r-xs); text-align: left; }
+  .fk-cell:hover { background: var(--bg-elevated); }
+  .fk-cell .dim { color: var(--faint); }
+
+  .fk-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown, 50); }
+  .fk-menu { position: fixed; z-index: var(--z-dropdown, 50); min-width: 240px; max-width: 320px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,0.5); padding: var(--s-1); display: flex; flex-direction: column; gap: 2px; }
+  .fk-existing { padding: var(--s-2) var(--s-3); font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+  .fk-create { display: flex; align-items: center; gap: var(--s-2); text-align: left; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12.5px; color: var(--ink-soft); }
+  .fk-create:hover { background: var(--accent); color: #fff; }
+  .fk-create code { font-family: var(--font-mono); }
+  .fk-plus { color: var(--accent); font-weight: 700; }
+  .fk-create:hover .fk-plus, .fk-create:hover code { color: #fff; }
+  .fk-form { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-3); }
+  .fk-l { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+  .fk-l select { height: 28px; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 var(--s-2); }
+  .fk-l select:focus { outline: none; border-color: var(--accent); }
+  .fk-err { margin: 0; font-size: 11px; color: var(--danger); }
+  .fk-act { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: 2px; }
   .mono { font-family: var(--font-mono); color: var(--ink-soft); }
   .dim { color: var(--faint); }
   .mid { text-align: center; padding: var(--s-5) !important; }

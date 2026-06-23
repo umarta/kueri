@@ -100,6 +100,33 @@ pub trait Driver: Send + Sync {
             .await?;
         Ok(())
     }
+    async fn add_foreign_key(
+        &self,
+        schema: &str,
+        table: &str,
+        column: &str,
+        ref_table: &str,
+        ref_column: &str,
+        name: &str,
+    ) -> AppResult<()> {
+        if self.dialect() == Dialect::Sqlite {
+            return Err(AppError::Other(
+                "SQLite can't add a foreign key to an existing table (requires a table rebuild)."
+                    .into(),
+            ));
+        }
+        self.run_query(&ddl::add_foreign_key(
+            self.dialect(),
+            schema,
+            table,
+            column,
+            ref_table,
+            ref_column,
+            name,
+        ))
+        .await?;
+        Ok(())
+    }
 
     // ── DDL ──────────────────────────────────────────────────────────────────
     // Each driver reports its SQL dialect; the default methods below build the

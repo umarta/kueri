@@ -108,6 +108,24 @@ pub async fn drop_index(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_foreign_key(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    column: String,
+    ref_table: String,
+    ref_column: String,
+    name: String,
+) -> AppResult<()> {
+    state
+        .get(&id)?
+        .add_foreign_key(&schema, &table, &column, &ref_table, &ref_column, &name)
+        .await
+}
+
+#[tauri::command]
 pub async fn primary_keys(
     state: State<'_, AppState>,
     id: String,

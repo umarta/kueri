@@ -239,6 +239,26 @@ pub fn create_index(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn add_foreign_key(
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    column: &str,
+    ref_table: &str,
+    ref_column: &str,
+    name: &str,
+) -> String {
+    format!(
+        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({});",
+        qualify(d, schema, table),
+        ident(d, name),
+        ident(d, column),
+        qualify(d, schema, ref_table),
+        ident(d, ref_column)
+    )
+}
+
 pub fn drop_index(d: Dialect, schema: &str, table: &str, name: &str) -> String {
     match d {
         // MySQL indexes are scoped to their table.

@@ -27,6 +27,7 @@ pub fn run() {
             commands::list_indexes,
             commands::create_index,
             commands::drop_index,
+            commands::add_foreign_key,
             commands::primary_keys,
             commands::execute_query,
             commands::create_table,
