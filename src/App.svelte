@@ -16,6 +16,7 @@
   import LogPanel from "./components/LogPanel.svelte";
   import Settings from "./components/Settings.svelte";
   import ImportDialog from "./components/ImportDialog.svelte";
+  import SavedQueries from "./components/SavedQueries.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
@@ -39,6 +40,7 @@
   let settingsOpen = false;
   let exportOpen = false;
   let csvImportOpen = false;
+  let savedOpen = false;
   let toast: { ok: boolean; msg: string } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -814,6 +816,7 @@
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
       case "cancel_query": cancelActive(); break;
       case "explain": explainQuery(); break;
+      case "saved_queries": savedOpen = true; break;
       case "gen_select": generateSql("select"); break;
       case "gen_insert": generateSql("insert"); break;
       case "gen_update": generateSql("update"); break;
@@ -1092,6 +1095,14 @@
 
 {#if exportOpen && $activeConnection}
   <ExportDialog cfg={$activeConnection} on:close={() => (exportOpen = false)} />
+{/if}
+
+{#if savedOpen}
+  <SavedQueries
+    currentSql={tab.kind === "query" ? tab.doc : ""}
+    on:open={(e) => { openSqlTab(e.detail, "Saved"); savedOpen = false; }}
+    on:close={() => (savedOpen = false)}
+  />
 {/if}
 
 {#if csvImportOpen && tab.selected}
