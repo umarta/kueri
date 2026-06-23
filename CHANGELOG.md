@@ -4,6 +4,37 @@ All notable changes to Kueri are documented here. This project adheres to
 [Semantic Versioning](https://semver.org) and the spirit of
 [Keep a Changelog](https://keepachangelog.com).
 
+## [0.3.0] — 2026-06-24
+
+A big step toward TablePlus/Navicat parity.
+
+### Added
+- **Keyboard grid navigation & editing** — arrows / Tab / Enter / type-to-edit, focus ring, ⌘C. (#28)
+- **Run multiple statements** in one script, with a result-set switcher. (#29)
+- **Cancel a running query** (⌘.). (#10)
+- **Export the whole table** + **SQL `INSERT`** format (CSV / JSON / SQL). (#30)
+- **Import CSV** into a table (column mapping + preview). (#15)
+- **Cell value inspector** + **aggregate stats** (Σ/avg/min/max on a selection). (#35, #37)
+- **Saved queries / snippets** and **persistent, date-grouped query History** with a right-click menu (Run / Copy / Insert / Add to Queries / Delete). (#33, #8)
+- **Generate SQL** from a table (SELECT/INSERT/UPDATE/CREATE) and **EXPLAIN**. (#32, #34)
+- **3-tab sidebar** — Items (tables/views, expandable to columns), Queries, History.
+- **Foreign-key navigation**, **index management + FK creation** (Postgres `NOT VALID`), **read-only mode**. (#4, #5, #14)
+- **Find & Replace** in the SQL editor. (#61)
+- **Server Monitor** — running sessions + Kill, and a **user/role list**. (#57, #58)
+- **Create / drop database & schema**. (#59)
+- **Column comments** shown in the Structure tab. (#60)
+- **Light theme** + Auto/Light/Dark. (#38)
+- **MySQL & SQLite backup/restore** (parity with Postgres). (#39)
+- **SSH tunnel** and **SSL/TLS** connection options; **connection groups**. (#11, #17, #36)
+- **Preview tabs** (single-click reuses, double-click pins) and **session restore** (reopen connections on launch). (#62)
+- TablePlus-style **two-pane Structure tab**, **enum dropdowns**, **show CREATE / DDL**, **duplicate row**, **sort / paginate / find / show-hide columns / copy / delete**.
+
+### Fixed
+- MySQL: tables not listing, backtick quoting for browse/edit, `bigint unsigned` shown as `true/false`.
+- Empty result sets keep their column headers + filter columns.
+- History records only console-run statements (not the grid's own SQL); clicking a History/Saved item loads into the active editor instead of spawning tabs.
+- Release pipeline no longer drops platform assets (create → build → publish).
+
 ## [0.2.0] — 2026-06-23
 
 The "complete the data grid" release: the grid gains every everyday operation,
@@ -49,5 +80,6 @@ Initial public release.
 - Query log, command palette, native menu + keyboard shortcuts, Settings.
 - OS keychain credential storage; signed-less release builds for macOS, Windows and Linux.
 
+[0.3.0]: https://github.com/umarta/kueri/releases/tag/v0.3.0
 [0.2.0]: https://github.com/umarta/kueri/releases/tag/v0.2.0
 [0.1.0]: https://github.com/umarta/kueri/releases/tag/v0.1.0

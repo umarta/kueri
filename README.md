@@ -185,7 +185,7 @@ No UI or command changes are needed.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). The latest release, **v0.2.0**, completes the data grid (delete / sort / paginate / find / copy / export / import) and adds a TablePlus-style Structure tab, foreign-key navigation, read-only mode, query history, SSL & SSH options.
+See [CHANGELOG.md](CHANGELOG.md). The latest release, **v0.3.0**, brings Kueri close to TablePlus/Navicat parity: keyboard grid nav, multi-statement, 3-tab sidebar, server monitor, themes, backup parity, and much more.
 
 ## Roadmap
 
