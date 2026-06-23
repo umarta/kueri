@@ -51,8 +51,9 @@
   }
 
   function openExport() {
-    if ($activeConnection?.kind !== "postgres") {
-      showToast(false, "Export & restore currently supports PostgreSQL only.");
+    const k = $activeConnection?.kind;
+    if (k !== "postgres" && k !== "mysql" && k !== "sqlite") {
+      showToast(false, "Database backup & restore supports PostgreSQL, MySQL and SQLite.");
       return;
     }
     exportOpen = true;

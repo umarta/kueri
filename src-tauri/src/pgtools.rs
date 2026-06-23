@@ -1,21 +1,19 @@
-//! PostgreSQL backup & restore by shelling out to the native client tools
-//! (`pg_dump`, `pg_restore`, `psql`). The full connection config is passed from
-//! the frontend so no extra state is needed; the password goes via `PGPASSWORD`
-//! (never on the argv, never logged).
+//! Database backup & restore by shelling out to the native client tools
+//! (`pg_dump`/`pg_restore`/`psql`, `mysqldump`/`mysql`) or — for SQLite — a file
+//! copy. The full connection config is passed from the frontend; passwords go
+//! via env (`PGPASSWORD`/`MYSQL_PWD`), never on the argv, never logged.
 
+use std::process::Stdio;
 use tokio::process::Command;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::DbKind;
 use crate::error::{AppError, AppResult};
 
-fn ensure_pg(cfg: &ConnectionConfig) -> AppResult<()> {
-    if cfg.kind != DbKind::Postgres {
-        return Err(AppError::Other(
-            "Backup & restore currently supports PostgreSQL only.".into(),
-        ));
-    }
-    Ok(())
+fn sqlite_file(cfg: &ConnectionConfig) -> String {
+    cfg.file_path
+        .clone()
+        .unwrap_or_else(|| cfg.database.clone())
 }
 
 /// `format`: "plain" | "custom" · `contents`: "all" | "schema" | "data".
@@ -26,7 +24,26 @@ pub async fn pg_export(
     format: String,
     contents: String,
 ) -> AppResult<String> {
-    ensure_pg(&cfg)?;
+    match cfg.kind {
+        DbKind::Postgres => pg_dump(&cfg, &path, &format, &contents).await,
+        DbKind::Mysql => mysqldump(&cfg, &path, &contents).await,
+        DbKind::Sqlite => {
+            std::fs::copy(sqlite_file(&cfg), &path)
+                .map_err(|e| AppError::Other(format!("copy database file: {e}")))?;
+            Ok("SQLite database file copied.".into())
+        }
+        _ => Err(AppError::Other(
+            "Backup & restore is supported for PostgreSQL, MySQL and SQLite.".into(),
+        )),
+    }
+}
+
+async fn pg_dump(
+    cfg: &ConnectionConfig,
+    path: &str,
+    format: &str,
+    contents: &str,
+) -> AppResult<String> {
     let mut cmd = Command::new("pg_dump");
     cmd.env("PGPASSWORD", &cfg.password)
         .arg("-h")
@@ -38,9 +55,9 @@ pub async fn pg_export(
         .arg("-d")
         .arg(&cfg.database)
         .arg("-f")
-        .arg(&path);
+        .arg(path);
     cmd.arg(if format == "custom" { "-Fc" } else { "-Fp" });
-    match contents.as_str() {
+    match contents {
         "schema" => {
             cmd.arg("--schema-only");
         }
@@ -52,9 +69,63 @@ pub async fn pg_export(
     run(cmd, "pg_dump").await
 }
 
+async fn mysqldump(cfg: &ConnectionConfig, path: &str, contents: &str) -> AppResult<String> {
+    let mut cmd = Command::new("mysqldump");
+    cmd.env("MYSQL_PWD", &cfg.password)
+        .arg("-h")
+        .arg(&cfg.host)
+        .arg("-P")
+        .arg(cfg.port.to_string())
+        .arg("-u")
+        .arg(&cfg.user)
+        .arg("--result-file")
+        .arg(path);
+    match contents {
+        "schema" => {
+            cmd.arg("--no-data");
+        }
+        "data" => {
+            cmd.arg("--no-create-info");
+        }
+        _ => {}
+    }
+    cmd.arg(&cfg.database);
+    run(cmd, "mysqldump").await
+}
+
 #[tauri::command]
 pub async fn pg_import(cfg: ConnectionConfig, path: String) -> AppResult<String> {
-    ensure_pg(&cfg)?;
+    match cfg.kind {
+        DbKind::Postgres => pg_restore_or_psql(&cfg, &path).await,
+        DbKind::Mysql => mysql_restore(&cfg, &path).await,
+        DbKind::Sqlite => {
+            std::fs::copy(&path, sqlite_file(&cfg))
+                .map_err(|e| AppError::Other(format!("restore database file: {e}")))?;
+            Ok("SQLite database file restored — reconnect to see the changes.".into())
+        }
+        _ => Err(AppError::Other(
+            "Backup & restore is supported for PostgreSQL, MySQL and SQLite.".into(),
+        )),
+    }
+}
+
+async fn mysql_restore(cfg: &ConnectionConfig, path: &str) -> AppResult<String> {
+    let file =
+        std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
+    let mut cmd = Command::new("mysql");
+    cmd.env("MYSQL_PWD", &cfg.password)
+        .arg("-h")
+        .arg(&cfg.host)
+        .arg("-P")
+        .arg(cfg.port.to_string())
+        .arg("-u")
+        .arg(&cfg.user)
+        .arg(&cfg.database)
+        .stdin(Stdio::from(file));
+    run(cmd, "mysql").await
+}
+
+async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str) -> AppResult<String> {
     let lower = path.to_lowercase();
     let custom =
         lower.ends_with(".dump") || lower.ends_with(".backup") || lower.ends_with(".pgdump");
@@ -72,7 +143,7 @@ pub async fn pg_import(cfg: ConnectionConfig, path: String) -> AppResult<String>
             .arg(&cfg.user)
             .arg("-d")
             .arg(&cfg.database)
-            .arg(&path);
+            .arg(path);
         (c, "pg_restore")
     } else {
         let mut c = Command::new("psql");
@@ -87,7 +158,7 @@ pub async fn pg_import(cfg: ConnectionConfig, path: String) -> AppResult<String>
             .arg("-v")
             .arg("ON_ERROR_STOP=1")
             .arg("-f")
-            .arg(&path);
+            .arg(path);
         (c, "psql")
     };
     cmd.env("PGPASSWORD", &cfg.password);
