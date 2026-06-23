@@ -1,4 +1,6 @@
-<img src="docs/logo.png" alt="Kueri" width="120" />\# Kueri
+<img src="docs/logo.png" alt="Kueri" width="120" />
+
+# Kueri
 
 **A lightweight, native, open-source multi-database GUI client.**
 
@@ -19,14 +21,19 @@ Most database GUIs are either heavy (Electron/Java), closed-source, or paid. Kue
 - **Multi-connection workspaces** — keep several databases open in a left rail and switch instantly; each keeps its own tabs.
 - **Schema browser** — schema switcher and a filterable table list.
 - **SQL editor** — CodeMirror with schema-aware context, per tab, `⌘↵` to run. Table tabs (grid) and query tabs (editor) are separate.
-- **Fast result grid** — virtualized for large result sets, with inline cell editing.
+- **Fast result grid** — virtualized for large result sets, with inline cell editing, **sort** by header, **pagination**, **find-in-results**, **show/hide columns** (persisted per table), multi-row **select + copy**, **delete** and **duplicate** rows.
 - **Safe edits** — commits write a precise primary-key-aware `UPDATE`; big integers keep full precision. Query results are editable when the query is a simple single-table `SELECT *`.
-- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); empty fields fall back to column defaults.
-- **Row detail panel** — edit a row field-by-field with type-aware controls (boolean dropdowns, JSON pretty/minify, quick `NULL`/empty).
+- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); empty fields fall back to column defaults. **Enum columns** edit via a dropdown.
+- **Row detail panel** — edit a row field-by-field with type-aware controls (boolean & enum dropdowns, JSON pretty/minify, quick `NULL`/empty).
 - **Filters** — build `WHERE` conditions without writing SQL.
+- **Structure tab** — TablePlus-style two-pane view: a columns grid (type / nullable / default / **foreign key** / comment) and an indexes grid; **manage indexes & foreign keys**, view the **CREATE / DDL**.
+- **Foreign-key navigation** — click an FK cell to jump to the referenced row.
 - **Table & column management** — create / rename / drop / truncate / duplicate tables and add / rename / drop columns; all DDL is generated per dialect in the backend.
-- **Query log** — a toggleable panel showing every statement Kueri runs, with timing.
-- **Command palette** (`⌘P`) — fuzzy-find and open any table across schemas.
+- **Import & export** — import CSV into a table (column mapping + preview) and export results to CSV / JSON; PostgreSQL backup & restore (`pg_dump` / `pg_restore`).
+- **Read-only / safe mode** — a per-connection lock that blocks writes & DDL (defaults on for production-tagged connections).
+- **Query history** — persistent, searchable, click-to-load; cancel a running query with `⌘.`.
+- **SQL formatter** (`⇧⌘F`), **command palette** (`⌘P`) to open any table.
+- **Connect anywhere** — SSL/TLS options and an optional **SSH tunnel** per connection.
 - **Native menu bar & Settings**, keyboard-first throughout.
 - **Safe credentials** — connections persist to disk; passwords go to the OS keychain, never plaintext.
 
@@ -51,16 +58,19 @@ Grab the installer for your platform from the [**latest release**](https://githu
 
 ### macOS
 
-1. Download **`Kueri_<version>_aarch64.dmg`** (Apple Silicon) or **`Kueri_<version>_x64.dmg`** (Intel).
+1. Download `Kueri_<version>_aarch64.dmg` (Apple Silicon) or `Kueri_<version>_x64.dmg` (Intel).
+
 2. Open the `.dmg` and drag **Kueri** into **Applications**.
-3. First launch: **right-click `Kueri.app` → Open → Open** (Gatekeeper only blocks a double-click). If it still refuses:
+
+3. First launch: **right-click** `Kueri.app` **→ Open → Open** (Gatekeeper only blocks a double-click). If it still refuses:
+
    ```bash
    xattr -dr com.apple.quarantine /Applications/Kueri.app
    ```
 
 ### Windows
 
-1. Download **`Kueri_<version>_x64-setup.exe`** (or the `.msi`).
+1. Download `Kueri_<version>_x64-setup.exe` (or the `.msi`).
 2. Run it. If **SmartScreen** appears, click **More info → Run anyway**.
 3. Launch **Kueri** from the Start menu.
 
@@ -127,8 +137,11 @@ npm run tauri build
 | `⌘K` | Switch schema |
 | `⌘R` | Reload workspace |
 | `⌘↵` | Run query |
+| `⌘.` | Cancel running query |
+| `⇧⌘F` | Format SQL |
 | `⌘S` | Commit changes |
 | `⌘I` | Add row |
+| `⌘D` | Duplicate row |
 | `⌘F` | Toggle filters |
 | `Space` | Toggle row detail |
 | `⌘⌃[` / `⌘⌃]` | Data / Structure view |
@@ -170,17 +183,21 @@ src-tauri/src/
 
 No UI or command changes are needed.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). The latest release, **v0.2.0**, completes the data grid (delete / sort / paginate / find / copy / export / import) and adds a TablePlus-style Structure tab, foreign-key navigation, read-only mode, query history, SSL & SSH options.
+
 ## Roadmap
 
-- [ ] Duplicate / delete rows
+- [x] Duplicate / delete rows · sort · show/hide columns — shipped in v0.2
 
-- [ ] Sort by clicking a column header
+- [x] SSH tunnels — shipped in v0.2
 
-- [ ] Show / hide and reorder columns
+- [ ] Column reordering & resize
+
+- [ ] `EXPLAIN` / query plan viewer
 
 - [ ] SQL Server driver (`tiberius`)
-
-- [ ] SSH tunnels
 
 - [ ] NoSQL mode (Redis key browser, MongoDB document view)
 
