@@ -42,6 +42,7 @@ pub fn run() {
             commands::change_column_type,
             commands::set_column_nullable,
             commands::write_text_file,
+            commands::read_text_file,
             pgtools::pg_export,
             pgtools::pg_import,
             persist::load_connections,
