@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import { save } from "@tauri-apps/plugin-dialog";
   import { api } from "../lib/tauri";
+  import { settings } from "../lib/stores/settings";
   import type { ConnectionConfig } from "../lib/types";
 
   export let cfg: ConnectionConfig;
@@ -28,7 +29,7 @@
     if (!path) return; // cancelled
     busy = true;
     try {
-      const msg = await api.pgExport(cfg, path, format, contents);
+      const msg = await api.pgExport(cfg, path, format, contents, $settings.toolsPath);
       result = { ok: true, msg: `${msg}\nSaved to ${path}` };
     } catch (e) {
       result = { ok: false, msg: (e as { message?: string })?.message ?? String(e) };

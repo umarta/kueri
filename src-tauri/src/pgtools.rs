@@ -16,17 +16,29 @@ fn sqlite_file(cfg: &ConnectionConfig) -> String {
         .unwrap_or_else(|| cfg.database.clone())
 }
 
+/// Resolve a client-tool binary, optionally from a user-set folder.
+fn bin(tools: &str, name: &str) -> String {
+    let t = tools.trim().trim_end_matches('/');
+    if t.is_empty() {
+        name.into()
+    } else {
+        format!("{t}/{name}")
+    }
+}
+
 /// `format`: "plain" | "custom" · `contents`: "all" | "schema" | "data".
+/// `tools`: optional folder for pg_dump/mysqldump (empty = PATH).
 #[tauri::command]
 pub async fn pg_export(
     cfg: ConnectionConfig,
     path: String,
     format: String,
     contents: String,
+    tools: String,
 ) -> AppResult<String> {
     match cfg.kind {
-        DbKind::Postgres => pg_dump(&cfg, &path, &format, &contents).await,
-        DbKind::Mysql => mysqldump(&cfg, &path, &contents).await,
+        DbKind::Postgres => pg_dump(&cfg, &path, &format, &contents, &tools).await,
+        DbKind::Mysql => mysqldump(&cfg, &path, &contents, &tools).await,
         DbKind::Sqlite => {
             std::fs::copy(sqlite_file(&cfg), &path)
                 .map_err(|e| AppError::Other(format!("copy database file: {e}")))?;
@@ -43,8 +55,9 @@ async fn pg_dump(
     path: &str,
     format: &str,
     contents: &str,
+    tools: &str,
 ) -> AppResult<String> {
-    let mut cmd = Command::new("pg_dump");
+    let mut cmd = Command::new(bin(tools, "pg_dump"));
     cmd.env("PGPASSWORD", &cfg.password)
         .arg("-h")
         .arg(&cfg.host)
@@ -69,8 +82,13 @@ async fn pg_dump(
     run(cmd, "pg_dump").await
 }
 
-async fn mysqldump(cfg: &ConnectionConfig, path: &str, contents: &str) -> AppResult<String> {
-    let mut cmd = Command::new("mysqldump");
+async fn mysqldump(
+    cfg: &ConnectionConfig,
+    path: &str,
+    contents: &str,
+    tools: &str,
+) -> AppResult<String> {
+    let mut cmd = Command::new(bin(tools, "mysqldump"));
     cmd.env("MYSQL_PWD", &cfg.password)
         .arg("-h")
         .arg(&cfg.host)
@@ -94,10 +112,10 @@ async fn mysqldump(cfg: &ConnectionConfig, path: &str, contents: &str) -> AppRes
 }
 
 #[tauri::command]
-pub async fn pg_import(cfg: ConnectionConfig, path: String) -> AppResult<String> {
+pub async fn pg_import(cfg: ConnectionConfig, path: String, tools: String) -> AppResult<String> {
     match cfg.kind {
-        DbKind::Postgres => pg_restore_or_psql(&cfg, &path).await,
-        DbKind::Mysql => mysql_restore(&cfg, &path).await,
+        DbKind::Postgres => pg_restore_or_psql(&cfg, &path, &tools).await,
+        DbKind::Mysql => mysql_restore(&cfg, &path, &tools).await,
         DbKind::Sqlite => {
             std::fs::copy(&path, sqlite_file(&cfg))
                 .map_err(|e| AppError::Other(format!("restore database file: {e}")))?;
@@ -109,10 +127,10 @@ pub async fn pg_import(cfg: ConnectionConfig, path: String) -> AppResult<String>
     }
 }
 
-async fn mysql_restore(cfg: &ConnectionConfig, path: &str) -> AppResult<String> {
+async fn mysql_restore(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppResult<String> {
     let file =
         std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
-    let mut cmd = Command::new("mysql");
+    let mut cmd = Command::new(bin(tools, "mysql"));
     cmd.env("MYSQL_PWD", &cfg.password)
         .arg("-h")
         .arg(&cfg.host)
@@ -125,13 +143,13 @@ async fn mysql_restore(cfg: &ConnectionConfig, path: &str) -> AppResult<String> 
     run(cmd, "mysql").await
 }
 
-async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str) -> AppResult<String> {
+async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppResult<String> {
     let lower = path.to_lowercase();
     let custom =
         lower.ends_with(".dump") || lower.ends_with(".backup") || lower.ends_with(".pgdump");
 
     let (mut cmd, tool) = if custom {
-        let mut c = Command::new("pg_restore");
+        let mut c = Command::new(bin(tools, "pg_restore"));
         c.arg("--no-owner")
             .arg("--clean")
             .arg("--if-exists")
@@ -146,7 +164,7 @@ async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str) -> AppResult<Str
             .arg(path);
         (c, "pg_restore")
     } else {
-        let mut c = Command::new("psql");
+        let mut c = Command::new(bin(tools, "psql"));
         c.arg("-h")
             .arg(&cfg.host)
             .arg("-p")
@@ -169,7 +187,7 @@ async fn run(mut cmd: Command, tool: &str) -> AppResult<String> {
     let out = cmd.output().await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::Other(format!(
-                "`{tool}` not found. Install the PostgreSQL client tools and make sure they're on your PATH."
+                "`{tool}` not found. Install the client tools, or set their folder in Settings → Client tools folder."
             ))
         } else {
             AppError::Other(format!("{tool}: {e}"))
@@ -179,8 +197,13 @@ async fn run(mut cmd: Command, tool: &str) -> AppResult<String> {
         Ok(format!("{tool} completed successfully."))
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
+        let hint = if stderr.contains("version mismatch") {
+            "\n\nYour client tools are older than the server. Point Settings → Client tools folder at a matching version (e.g. the server's bin directory)."
+        } else {
+            ""
+        };
         Err(AppError::Other(format!(
-            "{tool} failed:\n{}",
+            "{tool} failed:\n{}{hint}",
             stderr.trim()
         )))
     }

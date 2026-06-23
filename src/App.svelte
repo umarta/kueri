@@ -101,7 +101,7 @@
     if (!path) return;
     showToast(true, "Importing…");
     try {
-      const msg = await api.pgImport(cfg, path);
+      const msg = await api.pgImport(cfg, path, $settings.toolsPath);
       showToast(true, msg);
       await refresh();
     } catch (e) {

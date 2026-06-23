@@ -9,10 +9,13 @@ export interface Settings {
   altRows: boolean;
   /** Color theme: auto follows the OS. */
   theme: Theme;
+  /** Optional folder holding the DB client tools (pg_dump/pg_restore/psql/mysqldump).
+   *  Use this when your PATH copy is older than the server. */
+  toolsPath: string;
 }
 
 const KEY = "kueri.settings";
-const defaults: Settings = { rowLimit: 200, altRows: true, theme: "auto" };
+const defaults: Settings = { rowLimit: 200, altRows: true, theme: "auto", toolsPath: "" };
 
 function load(): Settings {
   try {
