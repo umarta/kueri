@@ -32,7 +32,10 @@ impl Driver for MySqlDriver {
     async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>> {
         // In MySQL a "schema" is a database.
         let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT schema_name FROM information_schema.schemata \
+            // CAST to CHAR: MySQL's information_schema columns can come back as a
+            // binary type that sqlx refuses to decode into String, which would
+            // surface as an error (and an empty table list). CHAR is always text.
+            "SELECT CAST(schema_name AS CHAR) FROM information_schema.schemata \
              WHERE schema_name NOT IN ('mysql','sys','performance_schema','information_schema') \
              ORDER BY schema_name",
         )
@@ -46,7 +49,7 @@ impl Driver for MySqlDriver {
 
     async fn list_tables(&self, schema: &str) -> AppResult<Vec<TableInfo>> {
         let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT table_name, table_type FROM information_schema.tables \
+            "SELECT CAST(table_name AS CHAR), CAST(table_type AS CHAR) FROM information_schema.tables \
              WHERE table_schema = ? ORDER BY table_name",
         )
         .bind(schema)
@@ -60,7 +63,7 @@ impl Driver for MySqlDriver {
 
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
         let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT column_name, data_type, is_nullable, column_default \
+            "SELECT CAST(column_name AS CHAR), CAST(data_type AS CHAR), CAST(is_nullable AS CHAR), CAST(column_default AS CHAR) \
              FROM information_schema.columns \
              WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position",
         )
@@ -81,7 +84,7 @@ impl Driver for MySqlDriver {
 
     async fn list_primary_keys(&self, schema: &str, table: &str) -> AppResult<Vec<String>> {
         let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT column_name FROM information_schema.columns \
+            "SELECT CAST(column_name AS CHAR) FROM information_schema.columns \
              WHERE table_schema = ? AND table_name = ? AND column_key = 'PRI' \
              ORDER BY ordinal_position",
         )

@@ -16,6 +16,7 @@
   let loading = true;
   let filter = "";
   let selectedKey = "";
+  let loadError: string | null = null;
   let schemaSelectEl: HTMLSelectElement;
 
   /** ⌘K — focus the schema switcher (the closest analog to TablePlus "switch database"). */
@@ -68,6 +69,7 @@
   export async function load() {
     if (!$activeConnectionId) return;
     loading = true;
+    loadError = null;
     try {
       schemas = await api.listSchemas($activeConnectionId);
       activeSchema = schemas.find((s) => s.name === "public")?.name ?? schemas[0]?.name ?? "";
@@ -86,6 +88,9 @@
           }
         }
       }
+    } catch (e) {
+      loadError = (e as { message?: string })?.message ?? String(e);
+      tables = [];
     } finally {
       loading = false;
     }
@@ -96,8 +101,14 @@
       tables = [];
       return;
     }
-    tables = await api.listTables($activeConnectionId, activeSchema);
-    catalogTables(tables.map((t) => t.name));
+    try {
+      tables = await api.listTables($activeConnectionId, activeSchema);
+      catalogTables(tables.map((t) => t.name));
+      loadError = null;
+    } catch (e) {
+      loadError = (e as { message?: string })?.message ?? String(e);
+      tables = [];
+    }
   }
 
   async function onSchemaChange() {
@@ -308,7 +319,9 @@
           </div>
         </div>
       {/each}
-      {#if visibleTables.length === 0}
+      {#if loadError}
+        <p class="loaderr" title={loadError}>Couldn't load tables: {loadError}</p>
+      {:else if visibleTables.length === 0}
         <p class="none">{filter ? "No matches" : "No tables"}</p>
       {/if}
     {/if}
@@ -493,6 +506,7 @@
   .act.danger:hover { background: color-mix(in srgb, var(--danger, #e5484d) 18%, transparent); color: var(--danger, #e5484d); }
 
   .none { margin: 0; padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--faint); }
+  .loaderr { margin: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; }
 
   .skeleton {
     height: 14px; margin: var(--s-3) var(--s-3); border-radius: var(--r-xs); width: var(--w);
