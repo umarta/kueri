@@ -186,7 +186,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -194,7 +194,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -404,27 +404,38 @@
   }
 
   function onSelectTable(e: CustomEvent<{ schema: string; table: string }>) {
-    openTable(e.detail.schema, e.detail.table);
+    openTable(e.detail.schema, e.detail.table, false);
+  }
+  function onOpenTableFull(e: CustomEvent<{ schema: string; table: string }>) {
+    openTable(e.detail.schema, e.detail.table, true);
+  }
+  // Promote a preview (italic) tab to a pinned (normal) tab.
+  function pinTab(id: string) {
+    const t = tabs.find((x) => x.id === id);
+    if (t && t.preview) { t.preview = false; sync(); }
   }
 
-  function openTable(schema: string, table: string) {
-    // Focus an existing table tab for this table; else reuse the active table tab;
-    // else open a new table tab. SQL query tabs are never hijacked.
+  // TablePlus-style preview tabs: a single-click reuses the active preview tab
+  // (italic) in place; double-click (pin=true) opens/keeps a pinned tab.
+  function openTable(schema: string, table: string, pin: boolean) {
     const existing = tabs.find(
       (x) => x.kind === "table" && x.selected?.schema === schema && x.selected?.table === table,
     );
     if (existing) {
       activeId = existing.id;
+      if (pin && existing.preview) { existing.preview = false; sync(); }
       return;
     }
     let t: QueryTab;
-    if (tab.kind === "table") {
+    if (tab.kind === "table" && tab.preview) {
       t = tab;
       t.filters = [];
       t.sort = null;
       t.offset = 0;
+      t.preview = !pin;
     } else {
       t = tableTab(schema, table);
+      t.preview = !pin;
       tabs = [...tabs, t];
     }
     activeId = t.id;
@@ -514,6 +525,7 @@
   async function commitEdits(e: CustomEvent<RowEdit[]>) {
     if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
+    t.preview = false; // editing pins a preview tab
     const tbl = t.editableTable;
     if (!tbl || !$activeConnectionId || !t.result) return;
     const cols = t.result.columns;
@@ -956,7 +968,7 @@
     />
     <div class="body" class:collapsed={!sidebarOpen}>
       {#if sidebarOpen}
-        <Sidebar bind:this={sidebar} on:selectTable={onSelectTable} />
+        <Sidebar bind:this={sidebar} on:selectTable={onSelectTable} on:openTableFull={onOpenTableFull} />
       {/if}
       <main class="main">
         <QueryTabs
@@ -965,6 +977,7 @@
           on:select={(e) => (activeId = e.detail)}
           on:close={(e) => closeTab(e.detail)}
           on:new={newTab}
+          on:pin={(e) => pinTab(e.detail)}
         />
 
         {#if tab.kind === "query"}
@@ -1093,7 +1106,7 @@
 
     {#if paletteOpen}
       <CommandPalette
-        on:select={(e) => { paletteOpen = false; openTable(e.detail.schema, e.detail.table); }}
+        on:select={(e) => { paletteOpen = false; openTable(e.detail.schema, e.detail.table, true); }}
         on:close={() => (paletteOpen = false)}
       />
     {/if}
