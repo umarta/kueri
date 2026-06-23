@@ -68,6 +68,7 @@ export const api = {
   // Write a text file (CSV/JSON export; path comes from a save dialog).
   writeTextFile: (path: string, content: string) =>
     invoke<void>("write_text_file", { path, content }),
+  readTextFile: (path: string) => invoke<string>("read_text_file", { path }),
 
   // Persistence (connections file) + OS keychain (passwords).
   loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),

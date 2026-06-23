@@ -15,6 +15,7 @@
   import CommandPalette from "./components/CommandPalette.svelte";
   import LogPanel from "./components/LogPanel.svelte";
   import Settings from "./components/Settings.svelte";
+  import ImportDialog from "./components/ImportDialog.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
@@ -37,6 +38,7 @@
   let insertNonce = 0;
   let settingsOpen = false;
   let exportOpen = false;
+  let csvImportOpen = false;
   let toast: { ok: boolean; msg: string } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -79,6 +81,48 @@
   // Cancel the active tab's in-flight query (the backend aborts the task).
   function cancelActive() {
     if (tab.running) api.cancelQuery(tab.id).catch(() => {});
+  }
+
+  // ── CSV import ────────────────────────────────────────────────────────────
+  function openCsvImport() {
+    if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) {
+      showToast(false, "Open a table first to import a CSV into it.");
+      return;
+    }
+    csvImportOpen = true;
+  }
+  async function runCsvImport(e: CustomEvent<{ columns: string[]; rows: string[][] }>) {
+    csvImportOpen = false;
+    const t = tab;
+    if (t.kind !== "table" || !t.selected || !$activeConnectionId) return;
+    if ($readOnly) { showToast(false, blockedMsg); return; }
+    const { schema, table } = t.selected;
+    const { columns: cols, rows } = e.detail;
+    if (!cols.length || !rows.length) return;
+    const into = qtable(schema, table);
+    const collist = cols.map(qid).join(", ");
+    const BATCH = 200;
+    let ok = 0;
+    let failErr = "";
+    t.running = true; sync();
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const chunk = rows.slice(i, i + BATCH);
+      const values = chunk.map((r) => `(${r.map((v) => (v === "" ? "NULL" : lit(v))).join(", ")})`).join(", ");
+      const sql = `INSERT INTO ${into} (${collist}) VALUES ${values};`;
+      try {
+        const s = performance.now();
+        await api.executeQuery($activeConnectionId, sql, t.id);
+        logSql(`-- import ${chunk.length} rows into ${schema}.${table}`, { ms: Math.round(performance.now() - s) });
+        ok += chunk.length;
+      } catch (err) {
+        failErr = (err as { message?: string })?.message ?? String(err);
+        break;
+      }
+    }
+    t.running = false; sync();
+    if (failErr) showToast(false, `Imported ${ok} rows, then failed: ${failErr}`);
+    else showToast(true, `Imported ${ok} row${ok === 1 ? "" : "s"} into ${schema}.${table}.`);
+    await browseTable(t, schema, table);
   }
 
   // Load a statement from the history panel into a fresh query tab.
@@ -620,6 +664,7 @@
       case "cancel_query": cancelActive(); break;
       case "export_csv": exportResult("csv"); break;
       case "export_json": exportResult("json"); break;
+      case "import_csv": openCsvImport(); break;
       case "export_db": openExport(); break;
       case "import_db": runImport(); break;
       case "refresh": refresh(); break;
@@ -882,6 +927,16 @@
 
 {#if exportOpen && $activeConnection}
   <ExportDialog cfg={$activeConnection} on:close={() => (exportOpen = false)} />
+{/if}
+
+{#if csvImportOpen && tab.selected}
+  <ImportDialog
+    columns={tab.columns}
+    schema={tab.selected.schema}
+    table={tab.selected.table}
+    on:import={runCsvImport}
+    on:close={() => (csvImportOpen = false)}
+  />
 {/if}
 
 {#if toast}

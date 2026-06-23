@@ -13,6 +13,12 @@ pub fn write_text_file(path: String, content: String) -> AppResult<()> {
     std::fs::write(&path, content).map_err(|e| AppError::Other(format!("write {path}: {e}")))
 }
 
+/// Read a text file (CSV import; the path comes from an open dialog).
+#[tauri::command]
+pub fn read_text_file(path: String) -> AppResult<String> {
+    std::fs::read_to_string(&path).map_err(|e| AppError::Other(format!("read {path}: {e}")))
+}
+
 #[tauri::command]
 pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> AppResult<String> {
     let driver = crate::db::open(&config).await?;
