@@ -173,15 +173,27 @@
 
   // Build a WHERE clause from the tab's filter conditions (Postgres-style quoting,
   // matching the browse SELECT below).
+  // Identifier quoting per dialect — MySQL uses backticks, the rest double quotes.
+  function qid(name: string): string {
+    return $activeConnection?.kind === "mysql"
+      ? "`" + name.replace(/`/g, "``") + "`"
+      : '"' + name.replace(/"/g, '""') + '"';
+  }
+  function qtable(schema: string, table: string): string {
+    return `${qid(schema)}.${qid(table)}`;
+  }
+
   function buildWhere(t: QueryTab): string {
     if (!t.filters.length) return "";
+    const pg = $activeConnection?.kind === "postgres";
     const parts = t.filters.map((f) => {
-      const col = `"${f.column}"`;
+      const col = qid(f.column);
       switch (f.op) {
         case "is null": return `${col} IS NULL`;
         case "is not null": return `${col} IS NOT NULL`;
-        case "contains": return `${col}::text ILIKE ${lit("%" + f.value + "%")}`;
-        case "starts": return `${col}::text ILIKE ${lit(f.value + "%")}`;
+        // Postgres needs a cast + ILIKE; MySQL/SQLite LIKE is already case-insensitive.
+        case "contains": return pg ? `${col}::text ILIKE ${lit("%" + f.value + "%")}` : `${col} LIKE ${lit("%" + f.value + "%")}`;
+        case "starts": return pg ? `${col}::text ILIKE ${lit(f.value + "%")}` : `${col} LIKE ${lit(f.value + "%")}`;
         case "!=": return `${col} <> ${lit(f.value)}`;
         default: return `${col} ${f.op} ${lit(f.value)}`;
       }
@@ -194,7 +206,7 @@
     t.selected = { schema, table };
     t.title = table;
     t.selectedRow = null;
-    t.doc = `SELECT * FROM "${schema}"."${table}"${buildWhere(t)} LIMIT ${$settings.rowLimit};`;
+    t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)} LIMIT ${$settings.rowLimit};`;
     sync();
     await exec(t, t.doc);
     t.editableTable = t.result ? { schema, table } : null;
@@ -283,15 +295,15 @@
     try {
       for (const ch of e.detail) {
         const sets = Object.entries(ch.updates)
-          .map(([col, val]) => `"${col}" = ${lit(val)}`)
+          .map(([col, val]) => `${qid(col)} = ${lit(val)}`)
           .join(", ");
         const where = whereCols
           .map((col) => {
             const v = ch.original[cols.indexOf(col)];
-            return v === null || v === undefined ? `"${col}" IS NULL` : `"${col}" = ${lit(v)}`;
+            return v === null || v === undefined ? `${qid(col)} IS NULL` : `${qid(col)} = ${lit(v)}`;
           })
           .join(" AND ");
-        const upd = `UPDATE "${tbl.schema}"."${tbl.table}" SET ${sets} WHERE ${where};`;
+        const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
         const us = performance.now();
         await api.executeQuery($activeConnectionId, upd);
         logSql(upd, { ms: Math.round(performance.now() - us) });
@@ -323,9 +335,13 @@
     if (!tbl || !$activeConnectionId) return;
     const updates = e.detail;
     const set = Object.keys(updates);
+    const into = qtable(tbl.schema, tbl.table);
+    const emptyInsert = $activeConnection?.kind === "mysql"
+      ? `INSERT INTO ${into} () VALUES ();`
+      : `INSERT INTO ${into} DEFAULT VALUES;`;
     const sql = set.length
-      ? `INSERT INTO "${tbl.schema}"."${tbl.table}" (${set.map((c) => `"${c}"`).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
-      : `INSERT INTO "${tbl.schema}"."${tbl.table}" DEFAULT VALUES;`;
+      ? `INSERT INTO ${into} (${set.map(qid).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
+      : emptyInsert;
     t.running = true; t.error = null; sync();
     const start = performance.now();
     try {
