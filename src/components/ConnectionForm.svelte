@@ -72,6 +72,10 @@
       <span class="lbl">Name</span>
       <input class="field" bind:value={config.name} placeholder="My database" />
     </label>
+    <label class="row">
+      <span class="lbl">Group</span>
+      <input class="field" bind:value={config.group} placeholder="folder (optional, e.g. Production)" />
+    </label>
 
     <div class="row">
       <span class="lbl">Environment</span>
