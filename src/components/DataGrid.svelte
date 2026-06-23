@@ -10,8 +10,56 @@
   export let selectedRow: number | null = null;
   /** Alternating row background colors (a workspace setting). */
   export let altRows = true;
+  /** Current sort (drives the header indicator); set by the parent. */
+  export let sort: { col: string; dir: "asc" | "desc" } | null = null;
+  /** Whether clicking a header sorts (table browse only). */
+  export let sortable = false;
 
-  const dispatch = createEventDispatcher<{ commit: RowEdit[]; selectRow: number }>();
+  const dispatch = createEventDispatcher<{
+    commit: RowEdit[];
+    selectRow: number;
+    sortColumn: string;
+    deleteRows: number[];
+  }>();
+
+  // ── Multi-row selection (for copy / delete) ─────────────────────────────────
+  let selected = new Set<number>();
+  let anchor = -1;
+
+  function rowClick(i: number, e: MouseEvent) {
+    if (e.shiftKey && anchor >= 0) {
+      const [a, b] = anchor < i ? [anchor, i] : [i, anchor];
+      const s = new Set(selected);
+      for (let k = a; k <= b; k++) s.add(k);
+      selected = s;
+    } else if (e.metaKey || e.ctrlKey) {
+      const s = new Set(selected);
+      if (s.has(i)) s.delete(i);
+      else s.add(i);
+      selected = s;
+      anchor = i;
+    } else {
+      selected = new Set([i]);
+      anchor = i;
+    }
+    dispatch("selectRow", i);
+  }
+  function clearSel() {
+    selected = new Set();
+  }
+  async function copySelected() {
+    if (!result || !selected.size) return;
+    const idx = [...selected].sort((a, b) => a - b);
+    const text = idx.map((i) => result!.rows[i].map(fmt).join("\t")).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+  function requestDelete() {
+    if (selected.size) dispatch("deleteRows", [...selected].sort((a, b) => a - b));
+  }
 
   const GUTTER = 48;
   const ROW_H = 28;
@@ -27,6 +75,8 @@
     prev = result;
     edits = {};
     editing = null;
+    selected = new Set();
+    anchor = -1;
   }
   $: pending = Object.keys(edits);
 
@@ -137,7 +187,13 @@
     <div class="surface" role="grid" aria-rowcount={result.row_count} style="width: {totalWidth}px">
       <div class="head" role="row" style="grid-template-columns: {template}">
         <div class="hcell gutter" role="columnheader"></div>
-        {#each result.columns as c (c)}<div class="hcell" role="columnheader" title={c}>{c}</div>{/each}
+        {#each result.columns as c (c)}
+          <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+          <div class="hcell" class:sortable role="columnheader" tabindex="-1" title={c} on:click={() => sortable && dispatch("sortColumn", c)}>
+            <span class="hname">{c}</span>
+            {#if sort && sort.col === c}<span class="sortind">{sort.dir === "asc" ? "↑" : "↓"}</span>{/if}
+          </div>
+        {/each}
       </div>
 
       <div class="body" style="height: {vtotal}px">
@@ -150,8 +206,8 @@
               tabindex="-1"
               aria-rowindex={i + 1}
               class:alt={altRows && i % 2 === 1}
-              class:selected={selectedRow === i}
-              on:click={() => dispatch("selectRow", i)}
+              class:selected={selected.has(i) || selectedRow === i}
+              on:click={(e) => rowClick(i, e)}
               style="transform: translateY({vrow.start}px); height: {ROW_H}px; grid-template-columns: {template}"
             >
               <div class="cell gutter" role="gridcell">{i + 1}</div>
@@ -181,6 +237,17 @@
     </div>
     {#if result.rows.length === 0}<div class="no-rows">Query returned no rows.</div>{/if}
   </div>
+
+  {#if selected.size}
+    <div class="commit-bar sel-bar" role="status">
+      <span class="badge sel">{selected.size}</span>
+      <span class="ctext">selected</span>
+      <div class="spacer"></div>
+      <button class="btn" on:click={copySelected}>Copy</button>
+      {#if editable}<button class="btn btn-danger" on:click={requestDelete}>Delete</button>{/if}
+      <button class="btn" on:click={clearSel}>Clear</button>
+    </div>
+  {/if}
 
   {#if pending.length}
     <div class="commit-bar" role="status">
@@ -223,11 +290,15 @@
     background: var(--bg-panel); border-bottom: 1px solid var(--border);
   }
   .hcell {
-    height: 28px; display: flex; align-items: center; padding: 0 var(--s-4);
+    height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 var(--s-4);
     font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
     border-right: 1px solid var(--hairline);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .hcell.sortable { cursor: pointer; }
+  .hcell.sortable:hover { color: var(--ink); background: var(--bg-elevated); }
+  .hname { overflow: hidden; text-overflow: ellipsis; }
+  .sortind { margin-left: auto; color: var(--accent); font-size: 11px; flex: none; }
 
   .body { position: relative; width: 100%; }
   .row {
@@ -288,6 +359,10 @@
   }
   .ctext { font-size: 12px; color: var(--ink-soft); }
   .spacer { flex: 1; }
+  .badge.sel { background: var(--accent); color: var(--accent-ink); }
+  .sel-bar { animation: none; }
+  .btn-danger { background: var(--danger); color: #fff; border-color: transparent; }
+  .btn-danger:hover { filter: brightness(1.05); }
   @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .commit-bar { animation: none; } }
 

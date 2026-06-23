@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, onMount, onDestroy } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+  import { open as openFileDialog, ask, save } from "@tauri-apps/plugin-dialog";
   import Welcome from "./components/Welcome.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import WorkspaceRail from "./components/WorkspaceRail.svelte";
@@ -79,7 +79,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0,
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -87,7 +87,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null,
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0,
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -206,7 +206,9 @@
     t.selected = { schema, table };
     t.title = table;
     t.selectedRow = null;
-    t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)} LIMIT ${$settings.rowLimit};`;
+    const order = t.sort ? ` ORDER BY ${qid(t.sort.col)} ${t.sort.dir === "desc" ? "DESC" : "ASC"}` : "";
+    const off = t.offset > 0 ? ` OFFSET ${t.offset}` : "";
+    t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)}${order} LIMIT ${$settings.rowLimit}${off};`;
     sync();
     await exec(t, t.doc);
     t.editableTable = t.result ? { schema, table } : null;
@@ -241,6 +243,8 @@
     if (tab.kind === "table") {
       t = tab;
       t.filters = [];
+      t.sort = null;
+      t.offset = 0;
     } else {
       t = tableTab(schema, table);
       tabs = [...tabs, t];
@@ -255,12 +259,41 @@
   function applyFilters(e: CustomEvent<import("./lib/types").FilterCond[]>) {
     if (!tab.selected) return;
     tab.filters = e.detail;
+    tab.offset = 0;
     sync();
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
   function clearFilters() {
     if (!tab.selected) return;
     tab.filters = [];
+    tab.offset = 0;
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+
+  // ── Pagination (table tabs) ─────────────────────────────────────────────────
+  function pagePrev() {
+    if (tab.kind !== "table" || !tab.selected || tab.offset === 0) return;
+    tab.offset = Math.max(0, tab.offset - $settings.rowLimit);
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+  function pageNext() {
+    if (tab.kind !== "table" || !tab.selected) return;
+    if ((tab.result?.rows.length ?? 0) < $settings.rowLimit) return; // last page
+    tab.offset += $settings.rowLimit;
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+
+  // ── Sort (table tabs) ───────────────────────────────────────────────────────
+  function toggleSort(col: string) {
+    if (tab.kind !== "table" || !tab.selected) return;
+    const cur = tab.sort;
+    if (!cur || cur.col !== col) tab.sort = { col, dir: "asc" };
+    else if (cur.dir === "asc") tab.sort = { col, dir: "desc" };
+    else tab.sort = null;
+    tab.offset = 0;
     sync();
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
@@ -320,6 +353,78 @@
       await exec(t, t.doc);
       if (t.result) await resolveEditable(t);
     }
+  }
+
+  // ── Export result (CSV / JSON) ──────────────────────────────────────────────
+  async function exportResult(format: "csv" | "json") {
+    const r = tab.result;
+    if (!r || r.columns.length === 0) {
+      showToast(false, "Nothing to export — run a query or open a table first.");
+      return;
+    }
+    const base = tab.selected?.table ?? "result";
+    const path = await save({
+      defaultPath: `${base}.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    });
+    if (!path) return;
+    let content: string;
+    if (format === "json") {
+      content = JSON.stringify(
+        r.rows.map((row) => Object.fromEntries(r.columns.map((c, i) => [c, row[i]]))),
+        null,
+        2,
+      );
+    } else {
+      const esc = (v: unknown) => {
+        const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      content = [r.columns.map(esc).join(","), ...r.rows.map((row) => row.map(esc).join(","))].join("\n");
+    }
+    try {
+      await api.writeTextFile(path, content);
+      showToast(true, `Exported ${r.rows.length} rows to ${path}`);
+    } catch (e) {
+      showToast(false, (e as { message?: string })?.message ?? String(e));
+    }
+  }
+
+  // ── Delete rows ─────────────────────────────────────────────────────────────
+  async function deleteRows(e: CustomEvent<number[]>) {
+    const t = tab;
+    const tbl = t.editableTable;
+    if (!tbl || !$activeConnectionId || !t.result) return;
+    const idxs = e.detail;
+    if (!idxs.length) return;
+    const ok = await ask(
+      `Delete ${idxs.length} row${idxs.length === 1 ? "" : "s"} from ${tbl.schema}.${tbl.table}? This cannot be undone.`,
+      { title: "Delete rows", kind: "warning" },
+    );
+    if (!ok) return;
+    const cols = t.result.columns;
+    const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
+    t.running = true; t.error = null; sync();
+    try {
+      for (const i of idxs) {
+        const row = t.result.rows[i];
+        const where = whereCols
+          .map((c) => {
+            const v = row[cols.indexOf(c)];
+            return v === null || v === undefined ? `${qid(c)} IS NULL` : `${qid(c)} = ${lit(v)}`;
+          })
+          .join(" AND ");
+        const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
+        const s = performance.now();
+        await api.executeQuery($activeConnectionId, del);
+        logSql(del, { ms: Math.round(performance.now() - s) });
+      }
+    } catch (err) {
+      t.error = String(err); t.running = false; sync();
+      return;
+    }
+    t.running = false; t.selectedRow = null; sync();
+    await browseTable(t, tbl.schema, tbl.table);
   }
 
   // ── Insert row ────────────────────────────────────────────────────────────
@@ -447,6 +552,8 @@
       case "new_connection": addOpen = true; break;
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
+      case "export_csv": exportResult("csv"); break;
+      case "export_json": exportResult("json"); break;
       case "export_db": openExport(); break;
       case "import_db": runImport(); break;
       case "refresh": refresh(); break;
@@ -630,9 +737,21 @@
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
+                    sort={tab.sort}
+                    sortable={tab.kind === "table"}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
+                    on:sortColumn={(e) => toggleSort(e.detail)}
+                    on:deleteRows={deleteRows}
                   />
+                  {#if tab.kind === "table" && tab.result}
+                    <div class="page-bar">
+                      <span class="prange">Rows {tab.result.rows.length ? tab.offset + 1 : 0}–{tab.offset + tab.result.rows.length}</span>
+                      <div class="sub-spacer"></div>
+                      <button class="pbtn" disabled={tab.offset === 0 || tab.running} on:click={pagePrev}>‹ Prev</button>
+                      <button class="pbtn" disabled={tab.result.rows.length < $settings.rowLimit || tab.running} on:click={pageNext}>Next ›</button>
+                    </div>
+                  {/if}
                 </div>
                 {#if logOpen}
                   <div class="log-col">
@@ -735,6 +854,11 @@
   .data-area { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .grid-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .page-bar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); background: var(--bg-panel); border-top: 1px solid var(--hairline); flex: none; }
+  .prange { font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); }
+  .pbtn { height: 24px; padding: 0 var(--s-3); border-radius: var(--r-sm); font-size: 12px; color: var(--ink-soft); border: 1px solid var(--border); background: var(--bg-content); }
+  .pbtn:hover:not(:disabled) { background: var(--bg-elevated); color: var(--ink); }
+  .pbtn:disabled { opacity: 0.4; }
   .log-col { height: 220px; flex: none; display: flex; min-height: 0; }
   .detail-col { width: 320px; flex: none; display: flex; min-height: 0; overflow: hidden; }
 

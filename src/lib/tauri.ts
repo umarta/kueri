@@ -50,6 +50,10 @@ export const api = {
   pgImport: (cfg: ConnectionConfig, path: string) =>
     invoke<string>("pg_import", { cfg, path }),
 
+  // Write a text file (CSV/JSON export; path comes from a save dialog).
+  writeTextFile: (path: string, content: string) =>
+    invoke<void>("write_text_file", { path, content }),
+
   // Persistence (connections file) + OS keychain (passwords).
   loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),
   saveConnections: (connections: Omit<ConnectionConfig, "password">[]) =>

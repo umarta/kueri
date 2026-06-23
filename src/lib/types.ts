@@ -74,6 +74,8 @@ export interface QueryTab {
   filters: FilterCond[];
   filtersOpen: boolean;
   selectedRow: number | null;
+  sort: { col: string; dir: "asc" | "desc" } | null;
+  offset: number;
 }
 
 /** A single filter condition in the filter bar. */

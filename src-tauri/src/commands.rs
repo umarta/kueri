@@ -5,7 +5,13 @@ use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::ColumnDef;
 use crate::db::driver::{ColumnInfo, QueryResult, SchemaInfo, TableInfo};
 use crate::db::pool::AppState;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+
+/// Write text to a path (used by CSV/JSON export; the path comes from a save dialog).
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> AppResult<()> {
+    std::fs::write(&path, content).map_err(|e| AppError::Other(format!("write {path}: {e}")))
+}
 
 #[tauri::command]
 pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> AppResult<String> {
