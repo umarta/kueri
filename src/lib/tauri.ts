@@ -17,6 +17,8 @@ export const api = {
     invoke<TableInfo[]>("list_tables", { id, schema }),
   listColumns: (id: string, schema: string, table: string) =>
     invoke<ColumnInfo[]>("list_columns", { id, schema, table }),
+  tableDdl: (id: string, schema: string, table: string) =>
+    invoke<string>("table_ddl", { id, schema, table }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
   executeQuery: (id: string, sql: string) =>

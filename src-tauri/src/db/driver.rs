@@ -148,4 +148,44 @@ pub trait Driver: Send + Sync {
         .await?;
         Ok(())
     }
+
+    /// `CREATE TABLE` text for a table. The default reconstructs it from the
+    /// column list + primary key (used by Postgres, which has no `SHOW CREATE`);
+    /// MySQL and SQLite override this with their native, exact statements.
+    async fn table_ddl(&self, schema: &str, table: &str) -> AppResult<String> {
+        let d = self.dialect();
+        let cols = self.list_columns(schema, table).await?;
+        let pks = self.list_primary_keys(schema, table).await?;
+        if cols.is_empty() {
+            return Err(AppError::Other(format!(
+                "Table {table} not found or has no columns."
+            )));
+        }
+        let mut lines: Vec<String> = cols
+            .iter()
+            .map(|c| {
+                let mut l = format!("  {} {}", ddl::ident(d, &c.name), c.data_type);
+                if !c.nullable {
+                    l.push_str(" NOT NULL");
+                }
+                if let Some(def) = c.default.as_deref().filter(|s| !s.is_empty()) {
+                    l.push_str(&format!(" DEFAULT {def}"));
+                }
+                l
+            })
+            .collect();
+        if !pks.is_empty() {
+            let cols = pks
+                .iter()
+                .map(|p| ddl::ident(d, p))
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("  PRIMARY KEY ({cols})"));
+        }
+        Ok(format!(
+            "CREATE TABLE {} (\n{}\n);",
+            ddl::qualify(d, schema, table),
+            lines.join(",\n")
+        ))
+    }
 }

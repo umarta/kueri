@@ -95,6 +95,17 @@ impl Driver for MySqlDriver {
         Ok(rows.into_iter().map(|(name,)| name).collect())
     }
 
+    async fn table_ddl(&self, schema: &str, table: &str) -> AppResult<String> {
+        let q = format!(
+            "SHOW CREATE TABLE `{}`.`{}`",
+            schema.replace('`', "``"),
+            table.replace('`', "``")
+        );
+        // Returns (Table, Create Table).
+        let row: (String, String) = sqlx::query_as(&q).fetch_one(&self.pool).await?;
+        Ok(format!("{};", row.1))
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let columns = rows

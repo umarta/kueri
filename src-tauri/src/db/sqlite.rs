@@ -85,6 +85,20 @@ impl Driver for SqliteDriver {
         Ok(keyed.into_iter().map(|(_, name)| name).collect())
     }
 
+    async fn table_ddl(&self, _schema: &str, table: &str) -> AppResult<String> {
+        // sqlite_master stores the original CREATE statement verbatim.
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT sql FROM sqlite_master WHERE name = ? AND type IN ('table','view')",
+        )
+        .bind(table)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row
+            .0
+            .map(|s| format!("{};", s.trim_end_matches(';')))
+            .unwrap_or_default())
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
         let columns = rows

@@ -27,6 +27,34 @@
   // Drop confirm
   let confirmDrop: string | null = null;
 
+  // DDL (CREATE statement) viewer
+  let ddlOpen = false;
+  let ddlText = "";
+  let ddlBusy = false;
+  let ddlKey = "";
+  $: if (`${schema}.${table}` !== ddlKey) { ddlKey = `${schema}.${table}`; ddlOpen = false; ddlText = ""; }
+  async function toggleDdl() {
+    ddlOpen = !ddlOpen;
+    if (ddlOpen && connectionId && table) {
+      ddlBusy = true;
+      ddlText = "";
+      try {
+        ddlText = await api.tableDdl(connectionId, schema, table);
+      } catch (e) {
+        ddlText = "-- " + ((e as { message?: string })?.message ?? String(e));
+      } finally {
+        ddlBusy = false;
+      }
+    }
+  }
+  async function copyDdl() {
+    try {
+      await navigator.clipboard.writeText(ddlText);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
   $: canEdit = !!(connectionId && schema && table) && !$readOnly;
   $: alterOk = canEdit && supportsColumnAlter(kind);
 
@@ -105,6 +133,8 @@
   <div class="meta">
     <span class="count">{schema && table ? `${schema}.${table}` : table}</span>
     <span class="cols">{columns.length} columns</span>
+    <div class="meta-spacer"></div>
+    {#if table}<button class="ddlbtn" class:on={ddlOpen} on:click={toggleDdl}>DDL</button>{/if}
     {#if canEdit}
       <button class="addbtn" on:click={startAdd} disabled={busy}>
         <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -112,6 +142,16 @@
       </button>
     {/if}
   </div>
+
+  {#if ddlOpen}
+    <div class="ddl-panel">
+      <div class="ddl-head">
+        <span>CREATE statement</span>
+        <button class="ddl-copy" on:click={copyDdl} disabled={!ddlText}>Copy</button>
+      </div>
+      {#if ddlBusy}<div class="ddl-loading">Loading…</div>{:else}<pre class="ddl-code">{ddlText}</pre>{/if}
+    </div>
+  {/if}
 
   {#if error}<div class="err">{error}</div>{/if}
 
@@ -216,9 +256,21 @@
   .meta { display: flex; align-items: center; gap: var(--s-5); padding: var(--s-2) var(--s-5); background: var(--bg-panel); border-bottom: 1px solid var(--hairline); flex: none; }
   .count { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); font-family: var(--font-mono); }
   .cols { font-size: 11.5px; color: var(--faint); }
-  .addbtn { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 11.5px; font-weight: 600; color: var(--accent); }
+  .meta-spacer { flex: 1; }
+  .addbtn { display: inline-flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 11.5px; font-weight: 600; color: var(--accent); }
   .addbtn:hover:not(:disabled) { background: var(--bg-elevated); }
   .addbtn:disabled { opacity: 0.5; }
+  .ddlbtn { padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 11.5px; font-weight: 600; color: var(--muted); }
+  .ddlbtn:hover { background: var(--bg-elevated); color: var(--ink); }
+  .ddlbtn.on { color: var(--accent); background: var(--bg-elevated); }
+
+  .ddl-panel { flex: none; border-bottom: 1px solid var(--hairline); background: var(--bg-content); }
+  .ddl-head { display: flex; align-items: center; justify-content: space-between; padding: var(--s-2) var(--s-5); font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .ddl-copy { font-size: 11px; color: var(--accent); padding: 2px var(--s-2); border-radius: var(--r-xs); text-transform: none; letter-spacing: 0; }
+  .ddl-copy:hover:not(:disabled) { background: var(--bg-elevated); }
+  .ddl-copy:disabled { opacity: 0.4; }
+  .ddl-loading { padding: var(--s-3) var(--s-5); font-size: 12px; color: var(--muted); }
+  .ddl-code { margin: 0; padding: var(--s-3) var(--s-5); max-height: 280px; overflow: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--ink-soft); white-space: pre; }
 
   .err { padding: var(--s-2) var(--s-5); background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent); color: var(--danger, #e5484d); font-size: 11.5px; border-bottom: 1px solid var(--hairline); white-space: pre-wrap; }
   .err.inline { padding: 0; background: none; border: none; margin: var(--s-3) 0 0; }

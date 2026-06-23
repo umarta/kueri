@@ -33,14 +33,14 @@ fn dq(v: &str) -> String {
 fn bq(v: &str) -> String {
     format!("`{}`", v.replace('`', "``"))
 }
-fn ident(d: Dialect, v: &str) -> String {
+pub fn ident(d: Dialect, v: &str) -> String {
     match d {
         Dialect::MySql => bq(v),
         _ => dq(v),
     }
 }
 /// Schema-qualified table name (SQLite has no schema namespace).
-fn qualify(d: Dialect, schema: &str, table: &str) -> String {
+pub fn qualify(d: Dialect, schema: &str, table: &str) -> String {
     match d {
         Dialect::MySql => format!("{}.{}", bq(schema), bq(table)),
         Dialect::Sqlite => dq(table),

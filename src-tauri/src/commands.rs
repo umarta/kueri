@@ -51,6 +51,16 @@ pub async fn list_columns(
 }
 
 #[tauri::command]
+pub async fn table_ddl(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<String> {
+    state.get(&id)?.table_ddl(&schema, &table).await
+}
+
+#[tauri::command]
 pub async fn primary_keys(
     state: State<'_, AppState>,
     id: String,
