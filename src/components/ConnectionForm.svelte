@@ -13,6 +13,10 @@
 
   const meta = dbKind(config.kind);
   $: isSqlite = config.kind === "sqlite";
+  $: isMysql = config.kind === "mysql";
+  $: sslModes = isMysql
+    ? ["PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY", "DISABLED"]
+    : ["prefer", "require", "verify-ca", "verify-full", "allow", "disable"];
 
   let busy = false;
   let error: string | null = null;
@@ -126,6 +130,30 @@
         <input type="checkbox" bind:checked={config.ssl} />
         <span>Use SSL</span>
       </label>
+
+      {#if config.ssl}
+        <label class="row">
+          <span class="lbl">SSL mode</span>
+          <select class="field" bind:value={config.ssl_mode}>
+            <option value="">(default)</option>
+            {#each sslModes as m (m)}<option value={m}>{m}</option>{/each}
+          </select>
+        </label>
+        <label class="row">
+          <span class="lbl">CA cert</span>
+          <input class="field" bind:value={config.ssl_ca} placeholder="/path/to/ca.pem (optional)" />
+        </label>
+        {#if !isMysql}
+          <label class="row">
+            <span class="lbl">Client cert</span>
+            <input class="field" bind:value={config.ssl_cert} placeholder="/path/to/client.crt (optional)" />
+          </label>
+          <label class="row">
+            <span class="lbl">Client key</span>
+            <input class="field" bind:value={config.ssl_key} placeholder="/path/to/client.key (optional)" />
+          </label>
+        {/if}
+      {/if}
     {/if}
 
     {#if error}

@@ -16,6 +16,10 @@ export interface ConnectionConfig {
   user: string;
   password: string;
   ssl: boolean;
+  ssl_mode?: string | null;
+  ssl_ca?: string | null;
+  ssl_cert?: string | null;
+  ssl_key?: string | null;
   file_path?: string | null;
   // UI-only metadata (ignored by the Rust backend — serde drops unknown fields).
   // `tag` is the environment label, `color` is its status-dot token name.
