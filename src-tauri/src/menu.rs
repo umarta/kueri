@@ -54,6 +54,15 @@ pub fn build(app: &App) -> tauri::Result<()> {
         )?)
         .item(&item(app, "new_table", "New Table…", None)?)
         .separator()
+        .item(
+            &SubmenuBuilder::new(app, "Generate SQL")
+                .item(&item(app, "gen_select", "SELECT", None)?)
+                .item(&item(app, "gen_insert", "INSERT", None)?)
+                .item(&item(app, "gen_update", "UPDATE", None)?)
+                .item(&item(app, "gen_create", "CREATE", None)?)
+                .build()?,
+        )
+        .separator()
         .item(&item(app, "import_csv", "Import CSV…", None)?)
         .separator()
         .item(&item(app, "export_result", "Export Result…", None)?)
@@ -125,6 +134,7 @@ pub fn build(app: &App) -> tauri::Result<()> {
             "Cancel Query",
             Some("CmdOrCtrl+Period"),
         )?)
+        .item(&item(app, "explain", "Explain Query", None)?)
         .item(&item(
             app,
             "format_sql",

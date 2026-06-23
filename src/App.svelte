@@ -126,12 +126,54 @@
   }
 
   // Load a statement from the history panel into a fresh query tab.
-  function openHistoryQuery(sql: string) {
+  function openSqlTab(sql: string, title: string) {
     const t = blankQueryTab();
     t.doc = sql;
-    t.title = "History";
+    t.title = title;
     tabs = [...tabs, t];
     activeId = t.id;
+  }
+  function openHistoryQuery(sql: string) {
+    openSqlTab(sql, "History");
+  }
+
+  // ── Generate SQL from the open table (#32) ───────────────────────────────────
+  async function generateSql(kind: "select" | "insert" | "update" | "create") {
+    if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) {
+      showToast(false, "Open a table first to generate SQL.");
+      return;
+    }
+    const { schema, table } = tab.selected;
+    const t = qtable(schema, table);
+    const cols = tab.columns.map((c) => c.name);
+    let sql = "";
+    if (kind === "select") {
+      sql = `SELECT ${cols.map(qid).join(", ")}\nFROM ${t}\nLIMIT 100;`;
+    } else if (kind === "insert") {
+      sql = `INSERT INTO ${t} (${cols.map(qid).join(", ")})\nVALUES (${cols.map(() => "NULL").join(", ")});`;
+    } else if (kind === "update") {
+      const pk = tab.pkColumns.length ? tab.pkColumns : [cols[0]];
+      const sets = cols.filter((c) => !pk.includes(c)).map((c) => `${qid(c)} = NULL`).join(",\n    ");
+      const where = pk.map((c) => `${qid(c)} = NULL`).join(" AND ");
+      sql = `UPDATE ${t}\nSET ${sets}\nWHERE ${where};`;
+    } else {
+      try {
+        sql = await api.tableDdl($activeConnectionId!, schema, table);
+      } catch (e) {
+        showToast(false, (e as { message?: string })?.message ?? String(e));
+        return;
+      }
+    }
+    openSqlTab(sql, `${table} ${kind}`);
+  }
+
+  // ── EXPLAIN the current query (#34) ──────────────────────────────────────────
+  function explainQuery() {
+    if (tab.kind !== "query") return;
+    const sql = tab.doc.trim().replace(/;+\s*$/, "");
+    if (!sql) return;
+    const prefix = $activeConnection?.kind === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
+    runSql(tab, prefix + sql);
   }
 
   // ── Query tabs ──────────────────────────────────────────────────────────────
@@ -771,6 +813,11 @@
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
       case "cancel_query": cancelActive(); break;
+      case "explain": explainQuery(); break;
+      case "gen_select": generateSql("select"); break;
+      case "gen_insert": generateSql("insert"); break;
+      case "gen_update": generateSql("update"); break;
+      case "gen_create": generateSql("create"); break;
       case "export_result": doExport(false); break;
       case "export_table": doExport(true); break;
       case "import_csv": openCsvImport(); break;
