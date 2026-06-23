@@ -33,6 +33,19 @@ pub struct ConnectionConfig {
     /// SQLite only: path to the .db file.
     #[serde(default)]
     pub file_path: Option<String>,
+
+    // ── SSH tunnel (optional) ────────────────────────────────────────────────
+    #[serde(default)]
+    pub ssh_enabled: bool,
+    #[serde(default)]
+    pub ssh_host: String,
+    #[serde(default)]
+    pub ssh_port: u16,
+    #[serde(default)]
+    pub ssh_user: String,
+    /// Path to a private key (key/agent auth only — no password prompts).
+    #[serde(default)]
+    pub ssh_key: Option<String>,
 }
 
 impl ConnectionConfig {

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tokio::process::Child;
 use tokio::task::AbortHandle;
 
 use crate::db::driver::Driver;
@@ -13,6 +14,8 @@ pub struct AppState {
     pub conns: Mutex<HashMap<String, Arc<dyn Driver>>>,
     /// In-flight queries by id, so a running query can be cancelled.
     pub running: Mutex<HashMap<String, AbortHandle>>,
+    /// SSH tunnel processes by connection id (killed on disconnect via kill_on_drop).
+    pub tunnels: Mutex<HashMap<String, Child>>,
 }
 
 impl AppState {
@@ -41,9 +44,15 @@ impl AppState {
         self.conns.lock().unwrap().insert(id, driver);
     }
 
+    pub fn insert_tunnel(&self, id: String, child: Child) {
+        self.tunnels.lock().unwrap().insert(id, child);
+    }
+
     pub fn remove(&self, id: &str) {
         if let Some(driver) = self.conns.lock().unwrap().remove(id) {
             tokio::spawn(async move { driver.close().await });
         }
+        // Dropping the Child tears down the SSH tunnel (kill_on_drop).
+        self.tunnels.lock().unwrap().remove(id);
     }
 }
