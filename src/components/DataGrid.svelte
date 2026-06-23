@@ -194,6 +194,47 @@
     const ci = visible[active.vc].i;
     try { await navigator.clipboard.writeText(fmt(result.rows[active.r][ci])); } catch { /* unavailable */ }
   }
+
+  // ── Aggregate stats over selected rows (active column) ───────────────────────
+  function fmtNum(n: number): string {
+    if (!isFinite(n)) return String(n);
+    return (Math.round(n * 10000) / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  }
+  $: selStats = ((visible.length, selected, active, result), computeSelStats());
+  function computeSelStats() {
+    if (!result || !selected.size || !active) return null;
+    const ci = visible[active.vc]?.i ?? -1;
+    if (ci < 0) return null;
+    const nums: number[] = [];
+    for (const r of selected) {
+      const v = result.rows[r]?.[ci];
+      if (v === null || v === undefined || v === "" || typeof v === "boolean") continue;
+      const num = Number(v);
+      if (!Number.isNaN(num)) nums.push(num);
+    }
+    if (!nums.length) return null;
+    const sum = nums.reduce((a, b) => a + b, 0);
+    return { count: nums.length, sum, avg: sum / nums.length, min: Math.min(...nums), max: Math.max(...nums) };
+  }
+
+  // ── Cell value inspector ─────────────────────────────────────────────────────
+  let inspect: { col: string; value: string; json: boolean } | null = null;
+  function openInspect() {
+    if (!active || !result) return;
+    const ci = visible[active.vc].i;
+    const raw = result.rows[active.r][ci];
+    let value = raw === null || raw === undefined ? "" : typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+    let json = false;
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try { value = JSON.stringify(JSON.parse(trimmed), null, 2); json = true; } catch { /* not JSON */ }
+    }
+    inspect = { col: result.columns[ci], value, json };
+  }
+  async function copyInspect() {
+    if (!inspect) return;
+    try { await navigator.clipboard.writeText(inspect.value); } catch { /* unavailable */ }
+  }
   function onGridKey(e: KeyboardEvent) {
     if (editing || !result || !visible.length) return;
     const k = e.key;
@@ -305,12 +346,17 @@
   $: vitems = $virtualizer.getVirtualItems();
 </script>
 
+<svelte:window on:keydown={(e) => { if (e.key === "Escape" && inspect) inspect = null; }} />
+
 {#if result}
   <div class="meta">
     <span class="count">{result.row_count.toLocaleString()} {result.row_count === 1 ? "row" : "rows"}</span>
     <span class="cols">{result.columns.length} columns</span>
     <div class="meta-spacer"></div>
     {#if editable}<span class="editable-hint">double-click a cell to edit</span>{/if}
+    {#if active}
+      <button class="cols-btn" on:click={openInspect} title="Inspect the active cell value">Inspect</button>
+    {/if}
     {#if result.rows.length}
       <button class="cols-btn" class:on={findOpen} on:click={toggleFind} title="Find in results">Find</button>
     {/if}
@@ -418,10 +464,31 @@
     <div class="commit-bar sel-bar" role="status">
       <span class="badge sel">{selected.size}</span>
       <span class="ctext">selected</span>
+      {#if selStats}
+        <span class="selstats">
+          Σ {fmtNum(selStats.sum)} · avg {fmtNum(selStats.avg)} · min {fmtNum(selStats.min)} · max {fmtNum(selStats.max)} · n {selStats.count}
+        </span>
+      {/if}
       <div class="spacer"></div>
       <button class="btn" on:click={copySelected}>Copy</button>
       {#if editable}<button class="btn btn-danger" on:click={requestDelete}>Delete</button>{/if}
       <button class="btn" on:click={clearSel}>Clear</button>
+    </div>
+  {/if}
+
+  {#if inspect}
+    {@const ins = inspect}
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="ins-backdrop" on:click={() => (inspect = null)}></div>
+    <div class="ins-modal" role="dialog" aria-modal="true">
+      <div class="ins-head">
+        <span class="ins-title">{ins.col}</span>
+        <span class="ins-meta">{ins.json ? "JSON · " : ""}{ins.value.length.toLocaleString()} chars</span>
+        <div class="spacer"></div>
+        <button class="ins-btn" on:click={copyInspect}>Copy</button>
+        <button class="ins-btn" on:click={() => (inspect = null)} aria-label="Close">✕</button>
+      </div>
+      <pre class="ins-body">{ins.value === "" ? "(empty)" : ins.value}</pre>
     </div>
   {/if}
 
@@ -577,6 +644,16 @@
   .spacer { flex: 1; }
   .badge.sel { background: var(--accent); color: var(--accent-ink); }
   .sel-bar { animation: none; }
+  .selstats { font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); margin-left: var(--s-3); }
+
+  .ins-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0,0,0,0.45); }
+  .ins-modal { position: fixed; z-index: var(--z-modal); top: 8vh; left: 50%; transform: translateX(-50%); width: min(680px, 92vw); max-height: 80vh; display: flex; flex-direction: column; background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); overflow: hidden; }
+  .ins-head { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hairline); flex: none; }
+  .ins-title { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
+  .ins-meta { font-size: 10.5px; color: var(--faint); }
+  .ins-btn { font-size: 11.5px; color: var(--ink-soft); padding: 2px var(--s-2); border-radius: var(--r-xs); }
+  .ins-btn:hover { background: var(--bg-elevated); color: var(--ink); }
+  .ins-body { margin: 0; padding: var(--s-4); overflow: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); white-space: pre-wrap; word-break: break-word; }
   .btn-danger { background: var(--danger); color: #fff; border-color: transparent; }
   .btn-danger:hover { filter: brightness(1.05); }
   @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } }
