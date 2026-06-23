@@ -71,6 +71,12 @@ pub fn build(app: &App) -> tauri::Result<()> {
         .separator()
         .item(&item(app, "commit", "Commit Changes", Some("CmdOrCtrl+S"))?)
         .item(&item(app, "add_row", "Add Row", Some("CmdOrCtrl+I"))?)
+        .item(&item(
+            app,
+            "duplicate_row",
+            "Duplicate Row",
+            Some("CmdOrCtrl+D"),
+        )?)
         .build()?;
 
     let view_menu = SubmenuBuilder::new(app, "View")

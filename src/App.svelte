@@ -31,6 +31,8 @@
   let logOpen = false;
   let detailOpen = false;
   let inserting = false;
+  let insertInitial: Record<string, string | null> | null = null;
+  let insertNonce = 0;
   let settingsOpen = false;
   let exportOpen = false;
   let toast: { ok: boolean; msg: string } | null = null;
@@ -430,6 +432,28 @@
   // ── Insert row ────────────────────────────────────────────────────────────
   function beginInsert() {
     if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) return;
+    insertInitial = null;
+    insertNonce += 1;
+    inserting = true;
+    detailOpen = true;
+  }
+
+  // Duplicate the selected row into a pre-filled insert form (PK columns cleared).
+  function beginDuplicate() {
+    if (tab.kind !== "table" || !tab.selected || tab.selectedRow === null || !tab.result) return;
+    if (tab.columns.length === 0) return;
+    const r = tab.result;
+    const row = r.rows[tab.selectedRow];
+    const init: Record<string, string | null> = {};
+    for (const c of tab.columns) {
+      if (tab.pkColumns.includes(c.name)) continue; // let serial/identity regenerate
+      const i = r.columns.indexOf(c.name);
+      if (i < 0) continue;
+      const v = row[i];
+      init[c.name] = v === null || v === undefined ? null : typeof v === "object" ? JSON.stringify(v) : String(v);
+    }
+    insertInitial = init;
+    insertNonce += 1;
     inserting = true;
     detailOpen = true;
   }
@@ -567,6 +591,7 @@
       case "toggle_log": logOpen = !logOpen; break;
       case "commit": grid?.commitStaged(); break;
       case "add_row": beginInsert(); break;
+      case "duplicate_row": beginDuplicate(); break;
       case "prev_tab": cycleTab(-1); break;
       case "next_tab": cycleTab(1); break;
       case "settings": settingsOpen = true; break;
@@ -767,6 +792,8 @@
                     columns={tab.columns}
                     editable={editing}
                     insert={inserting}
+                    initial={insertInitial}
+                    {insertNonce}
                     on:commit={commitEdits}
                     on:insert={insertRow}
                     on:close={() => { detailOpen = false; inserting = false; }}

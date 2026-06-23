@@ -8,6 +8,10 @@
   export let editable = false;
   /** Insert mode: a blank form built from `columns` for a new row. */
   export let insert = false;
+  /** Seed values for insert mode (used by Duplicate Row). */
+  export let initial: Record<string, string | null> | null = null;
+  /** Bumped by the parent each time insert/duplicate opens, to re-seed the form. */
+  export let insertNonce = 0;
 
   const dispatch = createEventDispatcher<{
     commit: RowEdit[];
@@ -20,8 +24,8 @@
   let menu: { col: string; i: number; right: number; top: number; json: boolean } | null = null;
 
   // Reset when the target changes (row selection, or entering/leaving insert mode).
-  $: rowKey = insert ? `insert:${columns.length}` : `${result?.columns.length ?? 0}:${index}`;
-  $: if (rowKey !== key) { key = rowKey; edits = {}; menu = null; }
+  $: rowKey = insert ? `insert:${insertNonce}` : `${result?.columns.length ?? 0}:${index}`;
+  $: if (rowKey !== key) { key = rowKey; edits = insert && initial ? { ...initial } : {}; menu = null; }
 
   $: row = result && index !== null ? result.rows[index] : null;
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
