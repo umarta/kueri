@@ -5,13 +5,13 @@
   export let tabs: QueryTab[] = [];
   export let activeId = "";
 
-  const dispatch = createEventDispatcher<{ select: string; close: string; new: void }>();
+  const dispatch = createEventDispatcher<{ select: string; close: string; new: void; pin: string }>();
 </script>
 
 <div class="tabstrip" role="tablist">
   {#each tabs as t (t.id)}
     <div class="tab" class:active={t.id === activeId} role="tab" aria-selected={t.id === activeId}>
-      <button class="label" on:click={() => dispatch("select", t.id)} title={t.title}>
+      <button class="label" class:preview={t.preview} on:click={() => dispatch("select", t.id)} on:dblclick={() => dispatch("pin", t.id)} title={t.preview ? `${t.title} (preview — double-click to keep)` : t.title}>
         {#if t.running}
           <span class="dot run"></span>
         {:else if t.kind === "table"}
@@ -25,7 +25,7 @@
             <path d="M4 5l3 3-3 3M8.5 11h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         {/if}
-        <span class="txt">{t.title}</span>
+        <span class="txt" class:italic={t.preview}>{t.title}</span>
       </button>
       {#if tabs.length > 1}
         <button class="close" title="Close tab (⌘W)" aria-label="Close tab" on:click={() => dispatch("close", t.id)}>
@@ -40,6 +40,8 @@
 </div>
 
 <style>
+  .txt.italic { font-style: italic; }
+
   .tabstrip {
     display: flex; align-items: stretch; gap: 2px;
     height: 36px; padding: var(--s-2) var(--s-2) 0;

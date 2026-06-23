@@ -6,7 +6,10 @@
   import Modal from "./Modal.svelte";
   import type { SchemaInfo, TableInfo, DbKind } from "../lib/types";
 
-  const dispatch = createEventDispatcher<{ selectTable: { schema: string; table: string } }>();
+  const dispatch = createEventDispatcher<{
+    selectTable: { schema: string; table: string };
+    openTableFull: { schema: string; table: string };
+  }>();
 
   let schemas: SchemaInfo[] = [];
   let activeSchema = "";
@@ -124,6 +127,10 @@
   function select(schema: string, table: string) {
     selectedKey = `${schema}.${table}`;
     dispatch("selectTable", { schema, table });
+  }
+  function selectFull(schema: string, table: string) {
+    selectedKey = `${schema}.${table}`;
+    dispatch("openTableFull", { schema, table });
   }
 
   $: visibleTables = filter
@@ -301,7 +308,7 @@
         {#if hasViews && gi === 0 && !isView(t.kind)}<div class="group-head">Tables</div>{/if}
         {#if isView(t.kind) && (gi === 0 || !isView(grouped[gi - 1].kind))}<div class="group-head">Views</div>{/if}
         <div class="row" class:selected={selectedKey === `${activeSchema}.${t.name}`}>
-          <button class="table" on:click={() => select(activeSchema, t.name)}>
+          <button class="table" on:click={() => select(activeSchema, t.name)} on:dblclick={() => selectFull(activeSchema, t.name)}>
             {#if isView(t.kind)}
               <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
                 <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/>

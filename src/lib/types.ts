@@ -92,6 +92,8 @@ export interface QueryTab {
   /** Result sets from a multi-statement run (empty/1 for a single statement). */
   results: QueryResult[];
   resultIdx: number;
+  /** Preview (italic) table tab — a single-click reuses it; double-click pins it. */
+  preview: boolean;
 }
 
 /** A foreign-key edge: `column` → `ref_schema.ref_table.ref_column`. */
