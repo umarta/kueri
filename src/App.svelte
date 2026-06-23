@@ -22,7 +22,7 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
-    readOnly, isReadStatement, shouldStartReadOnly,
+    readOnly, isReadStatement, shouldStartReadOnly, resolvePassword,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
   import { logSql } from "./lib/stores/log";
@@ -784,6 +784,49 @@
     tabs = [blankQueryTab()];
     activeId = tabs[0].id;
   }
+
+  // ── Session restore — reopen the connections that were open last time ─────────
+  let sessionReady = false;
+  $: if (sessionReady) {
+    try {
+      localStorage.setItem(
+        "kueri.session",
+        JSON.stringify({ open: $workspaces.map((w) => w.id), active: $activeConnectionId }),
+      );
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  async function restoreSession() {
+    let sess: { open?: string[]; active?: string | null } | null = null;
+    try {
+      sess = JSON.parse(localStorage.getItem("kueri.session") || "null");
+    } catch {
+      /* ignore */
+    }
+    if (!sess?.open?.length) return;
+    const saved = await api.loadConnections().catch(() => [] as ConnectionConfig[]);
+    for (const cid of sess.open) {
+      const cfg = saved.find((c) => c.id === cid);
+      if (!cfg) continue;
+      try {
+        const full = { ...cfg, password: await resolvePassword(cfg) };
+        const id = await api.connect(full);
+        workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: full }]));
+      } catch {
+        /* skip connections that no longer reach */
+      }
+    }
+    const target = $workspaces.find((w) => w.id === sess.active) ?? $workspaces[0];
+    if (target) {
+      activeConnection.set(target.config);
+      activeConnectionId.set(target.id);
+      readOnly.set(shouldStartReadOnly(target.config.color, target.config.tag));
+      freshTabs();
+      schemaCatalog.set({});
+      reloadSidebar();
+    }
+  }
   function stashCurrent() {
     if ($activeConnectionId) stash[$activeConnectionId] = { tabs, activeId, seq };
   }
@@ -908,6 +951,12 @@
     } catch {
       /* not running under Tauri (browser dev) */
     }
+    try {
+      await restoreSession();
+    } catch {
+      /* ignore restore failures */
+    }
+    sessionReady = true;
   });
   onDestroy(() => unlistenMenu?.());
 
