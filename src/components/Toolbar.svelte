@@ -6,6 +6,7 @@
   export let sidebarOpen = true;
   export let logOpen = false;
   export let detailOpen = false;
+  export let readOnly = false;
 
   const dispatch = createEventDispatcher<{
     disconnect: void;
@@ -13,6 +14,7 @@
     toggleSidebar: void;
     toggleLog: void;
     toggleDetail: void;
+    toggleReadOnly: void;
   }>();
 
   $: conn = $activeConnection;
@@ -49,6 +51,20 @@
   </div>
 
   <div class="right">
+    <button
+      class="tbtn lock"
+      class:locked={readOnly}
+      title={readOnly ? "Read-only mode on — click to allow writes" : "Writes allowed — click for read-only mode"}
+      aria-label="Toggle read-only mode"
+      on:click={() => dispatch("toggleReadOnly")}
+    >
+      {#if readOnly}
+        <svg viewBox="0 0 18 18" width="15" height="15" aria-hidden="true"><rect x="4" y="8" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+      {:else}
+        <svg viewBox="0 0 18 18" width="15" height="15" aria-hidden="true"><rect x="4" y="8" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 8V6a3 3 0 0 1 5.8-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      {/if}
+    </button>
+    <span class="divider"></span>
     <button
       class="tbtn"
       class:active={logOpen}
@@ -105,6 +121,7 @@
   }
   .tbtn:hover { background: var(--bg-elevated); color: var(--ink); }
   .tbtn.active { background: var(--bg-active, var(--bg-elevated)); color: var(--accent); }
+  .tbtn.lock.locked { color: var(--warn); }
   .divider { width: 1px; height: 18px; background: var(--border); margin: 0 var(--s-1); align-self: center; }
 
   .center { display: flex; justify-content: center; }

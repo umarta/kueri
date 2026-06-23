@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
   import { typeOptions, alterTypeOptions, supportsColumnAlter, type ColumnDraft } from "../lib/ddl";
+  import { readOnly } from "../lib/stores/connection";
   import type { ColumnInfo, DbKind } from "../lib/types";
 
   export let columns: ColumnInfo[] = [];
@@ -26,7 +27,7 @@
   // Drop confirm
   let confirmDrop: string | null = null;
 
-  $: canEdit = !!(connectionId && schema && table);
+  $: canEdit = !!(connectionId && schema && table) && !$readOnly;
   $: alterOk = canEdit && supportsColumnAlter(kind);
 
   // Inline type edit

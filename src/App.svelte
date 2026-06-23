@@ -19,6 +19,7 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
+    readOnly, isReadStatement, shouldStartReadOnly,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
   import { logSql } from "./lib/stores/log";
@@ -130,7 +131,10 @@
 
   // Editor path: detect whether the query maps to one updatable table so the
   // result (grid + row detail) can be edited; otherwise it stays read-only.
+  const blockedMsg = "Read-only mode is on for this connection — toggle the lock in the toolbar to allow writes.";
+
   async function runSql(t: QueryTab, sql: string) {
+    if ($readOnly && !isReadStatement(sql)) { showToast(false, blockedMsg); return; }
     t.editableTable = null; t.pkColumns = []; t.columns = []; sync();
     await exec(t, sql);
     if (t.result) await resolveEditable(t);
@@ -321,6 +325,7 @@
   }
 
   async function commitEdits(e: CustomEvent<RowEdit[]>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
     const tbl = t.editableTable;
     if (!tbl || !$activeConnectionId || !t.result) return;
@@ -394,6 +399,7 @@
 
   // ── Delete rows ─────────────────────────────────────────────────────────────
   async function deleteRows(e: CustomEvent<number[]>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
     const tbl = t.editableTable;
     if (!tbl || !$activeConnectionId || !t.result) return;
@@ -459,6 +465,7 @@
   }
 
   async function insertRow(e: CustomEvent<Record<string, string | null>>) {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     const t = tab;
     const tbl = t.selected;
     if (!tbl || !$activeConnectionId) return;
@@ -518,6 +525,7 @@
     stashCurrent();
     activeConnection.set(config);
     activeConnectionId.set(id);
+    readOnly.set(shouldStartReadOnly(config.color, config.tag));
     freshTabs();
     schemaCatalog.set({});
     addOpen = false;
@@ -531,6 +539,7 @@
     stashCurrent();
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
+    readOnly.set(shouldStartReadOnly(ws.config.color, ws.config.tag));
     restore(id);
     schemaCatalog.set({});
     reloadSidebar();
@@ -546,6 +555,7 @@
       const next = remaining[0];
       activeConnection.set(next.config);
       activeConnectionId.set(next.id);
+      readOnly.set(shouldStartReadOnly(next.config.color, next.config.tag));
       restore(next.id);
       schemaCatalog.set({});
       reloadSidebar();
@@ -681,11 +691,13 @@
       {sidebarOpen}
       {logOpen}
       {detailOpen}
+      readOnly={$readOnly}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
+      on:toggleReadOnly={() => readOnly.update((v) => !v)}
     />
     <div class="body" class:collapsed={!sidebarOpen}>
       {#if sidebarOpen}

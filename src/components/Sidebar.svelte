@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
-  import { activeConnectionId, activeConnection, catalogTables, activeSchema as activeSchemaStore } from "../lib/stores/connection";
+  import { activeConnectionId, activeConnection, catalogTables, activeSchema as activeSchemaStore, readOnly } from "../lib/stores/connection";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import Modal from "./Modal.svelte";
   import type { SchemaInfo, TableInfo, DbKind } from "../lib/types";
@@ -279,7 +279,7 @@
       </select>
       <svg class="chev" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M3 4.5L6 7.5l3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <button class="add-btn" on:click={openAdd} disabled={!activeSchema} title="Add table" aria-label="Add table">
+    <button class="add-btn" on:click={openAdd} disabled={!activeSchema || $readOnly} title={$readOnly ? "Read-only mode" : "Add table"} aria-label="Add table">
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
     </button>
   </div>
@@ -303,6 +303,7 @@
             </svg>
             <span class="tname">{t.name}</span>
           </button>
+          {#if !$readOnly}
           <div class="actions">
             <button class="act" title="Rename" aria-label="Rename {t.name}" on:click|stopPropagation={() => openRename(t.name)}>
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13l-3.5.5L3 10z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
@@ -317,6 +318,7 @@
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 4.5h10M6.5 4V2.8h3V4M5 4.5l.5 8.5h5l.5-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
+          {/if}
         </div>
       {/each}
       {#if loadError}
