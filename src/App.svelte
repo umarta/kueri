@@ -968,7 +968,13 @@
     />
     <div class="body" class:collapsed={!sidebarOpen}>
       {#if sidebarOpen}
-        <Sidebar bind:this={sidebar} on:selectTable={onSelectTable} on:openTableFull={onOpenTableFull} />
+        <Sidebar
+          bind:this={sidebar}
+          currentSql={tab.kind === "query" ? tab.doc : ""}
+          on:selectTable={onSelectTable}
+          on:openTableFull={onOpenTableFull}
+          on:openQuery={(e) => openSqlTab(e.detail, "Query")}
+        />
       {/if}
       <main class="main">
         <QueryTabs
