@@ -13,12 +13,17 @@
   let busy = false;
   let result: { ok: boolean; msg: string } | null = null;
 
+  $: isPg = cfg.kind === "postgres";
+  $: isMysql = cfg.kind === "mysql";
+  $: isSqlite = cfg.kind === "sqlite";
+
   async function run() {
     result = null;
-    const ext = format === "custom" ? "dump" : "sql";
+    const ext = isSqlite ? "sqlite" : format === "custom" ? "dump" : "sql";
+    const filterName = isSqlite ? "SQLite database" : format === "custom" ? "Postgres dump" : "SQL";
     const path = await save({
       defaultPath: `${cfg.database || "database"}.${ext}`,
-      filters: [{ name: format === "custom" ? "Postgres dump" : "SQL", extensions: [ext] }],
+      filters: [{ name: filterName, extensions: [ext] }],
     });
     if (!path) return; // cancelled
     busy = true;
@@ -42,22 +47,28 @@
     </header>
 
     <div class="body">
-      <div class="field">
-        <span class="lbl">Format</span>
-        <div class="seg">
-          <button class:active={format === "plain"} on:click={() => (format = "plain")}>Plain SQL (.sql)</button>
-          <button class:active={format === "custom"} on:click={() => (format = "custom")}>Custom (.dump)</button>
+      {#if isPg}
+        <div class="field">
+          <span class="lbl">Format</span>
+          <div class="seg">
+            <button class:active={format === "plain"} on:click={() => (format = "plain")}>Plain SQL (.sql)</button>
+            <button class:active={format === "custom"} on:click={() => (format = "custom")}>Custom (.dump)</button>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <span class="lbl">Contents</span>
-        <div class="seg">
-          <button class:active={contents === "all"} on:click={() => (contents = "all")}>Schema + data</button>
-          <button class:active={contents === "schema"} on:click={() => (contents = "schema")}>Schema only</button>
-          <button class:active={contents === "data"} on:click={() => (contents = "data")}>Data only</button>
+      {/if}
+      {#if !isSqlite}
+        <div class="field">
+          <span class="lbl">Contents</span>
+          <div class="seg">
+            <button class:active={contents === "all"} on:click={() => (contents = "all")}>Schema + data</button>
+            <button class:active={contents === "schema"} on:click={() => (contents = "schema")}>Schema only</button>
+            <button class:active={contents === "data"} on:click={() => (contents = "data")}>Data only</button>
+          </div>
         </div>
-      </div>
-      <p class="hint">Runs <code>pg_dump</code> using the PostgreSQL client tools on your machine.</p>
+      {/if}
+      <p class="hint">
+        {#if isPg}Runs <code>pg_dump</code> (PostgreSQL client tools).{:else if isMysql}Runs <code>mysqldump</code> (MySQL client tools).{:else}Copies the SQLite database file.{/if}
+      </p>
 
       {#if result}
         <pre class="result" class:err={!result.ok}>{result.msg}</pre>
