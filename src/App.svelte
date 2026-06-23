@@ -141,7 +141,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0,
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -149,7 +149,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [],
+      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0,
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -192,11 +192,77 @@
   // result (grid + row detail) can be edited; otherwise it stays read-only.
   const blockedMsg = "Read-only mode is on for this connection — toggle the lock in the toolbar to allow writes.";
 
+  // Split a script into statements, respecting quotes, comments and $tag$ blocks.
+  function splitStatements(sql: string): string[] {
+    const out: string[] = [];
+    let cur = "";
+    let i = 0;
+    const n = sql.length;
+    let dollar: string | null = null;
+    while (i < n) {
+      const c = sql[i];
+      if (dollar) {
+        if (sql.startsWith(dollar, i)) { cur += dollar; i += dollar.length; dollar = null; continue; }
+        cur += c; i++; continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        const q = c; cur += c; i++;
+        while (i < n) {
+          cur += sql[i];
+          if (sql[i] === q) { if (sql[i + 1] === q) { cur += sql[i + 1]; i += 2; continue; } i++; break; }
+          i++;
+        }
+        continue;
+      }
+      if (c === "-" && sql[i + 1] === "-") { while (i < n && sql[i] !== "\n") { cur += sql[i]; i++; } continue; }
+      if (c === "/" && sql[i + 1] === "*") { cur += "/*"; i += 2; while (i < n && !(sql[i] === "*" && sql[i + 1] === "/")) { cur += sql[i]; i++; } cur += "*/"; i += 2; continue; }
+      if (c === "$") { const m = /^\$[A-Za-z0-9_]*\$/.exec(sql.slice(i)); if (m) { dollar = m[0]; cur += m[0]; i += m[0].length; continue; } }
+      if (c === ";") { if (cur.trim()) out.push(cur.trim()); cur = ""; i++; continue; }
+      cur += c; i++;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  }
+
+  function selectResult(t: QueryTab, idx: number) {
+    if (idx < 0 || idx >= t.results.length) return;
+    t.resultIdx = idx;
+    t.result = t.results[idx];
+    sync();
+  }
+
   async function runSql(t: QueryTab, sql: string) {
-    if ($readOnly && !isReadStatement(sql)) { showToast(false, blockedMsg); return; }
-    t.editableTable = null; t.pkColumns = []; t.columns = []; sync();
-    await exec(t, sql);
-    if (t.result) await resolveEditable(t);
+    const stmts = splitStatements(sql);
+    if (!stmts.length) return;
+    if ($readOnly && stmts.some((s) => !isReadStatement(s))) { showToast(false, blockedMsg); return; }
+    t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync();
+    // Single statement: keep the editable single-table path.
+    if (stmts.length === 1) {
+      await exec(t, stmts[0]);
+      if (t.result) await resolveEditable(t);
+      return;
+    }
+    // Multiple statements: run in order, collect each result, stop on first error.
+    t.running = true; t.error = null; t.result = null; sync();
+    const collected: import("./lib/types").QueryResult[] = [];
+    for (let idx = 0; idx < stmts.length; idx++) {
+      const s = stmts[idx];
+      const start = performance.now();
+      try {
+        const r = await api.executeQuery($activeConnectionId!, s, t.id);
+        collected.push(r);
+        logSql(s, { ms: Math.round(performance.now() - start) });
+      } catch (e) {
+        t.error = `Statement ${idx + 1} of ${stmts.length} failed: ${(e as { message?: string })?.message ?? String(e)}`;
+        logSql(s, { ms: Math.round(performance.now() - start), error: String(e) });
+        break;
+      }
+    }
+    t.results = collected;
+    t.resultIdx = Math.max(0, collected.length - 1);
+    t.result = collected[t.resultIdx] ?? null;
+    t.running = false;
+    sync();
   }
 
   /** A query is editable only if it's `SELECT * FROM <one table>` (no joins,
@@ -271,6 +337,7 @@
     t.selected = { schema, table };
     t.title = table;
     t.selectedRow = null;
+    t.results = [];
     const order = t.sort ? ` ORDER BY ${qid(t.sort.col)} ${t.sort.dir === "desc" ? "DESC" : "ASC"}` : "";
     const off = t.offset > 0 ? ` OFFSET ${t.offset}` : "";
     t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)}${order} LIMIT ${$settings.rowLimit}${off};`;
@@ -894,6 +961,15 @@
             <div class="data-area">
               <div class="main-col">
                 <div class="grid-col">
+                  {#if tab.results.length > 1}
+                    <div class="rset-bar">
+                      {#each tab.results as rs, ri (ri)}
+                        <button class="rset" class:active={tab.resultIdx === ri} on:click={() => selectResult(tab, ri)}>
+                          #{ri + 1}<span class="rset-n">{rs.columns.length ? `${rs.row_count} row${rs.row_count === 1 ? "" : "s"}` : "OK"}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
                   <DataGrid
                     bind:this={grid}
                     result={tab.result}
@@ -1037,6 +1113,11 @@
   .data-area { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .grid-col { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .rset-bar { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-4); background: var(--bg-panel); border-bottom: 1px solid var(--hairline); flex: none; overflow-x: auto; }
+  .rset { display: inline-flex; align-items: center; gap: 5px; padding: 2px var(--s-3); border-radius: var(--r-sm); font-size: 11.5px; color: var(--muted); border: 1px solid transparent; white-space: nowrap; }
+  .rset:hover { background: var(--bg-elevated); color: var(--ink); }
+  .rset.active { color: var(--ink); background: var(--bg-elevated); border-color: var(--border); }
+  .rset-n { font-size: 10px; color: var(--faint); }
   .page-bar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); background: var(--bg-panel); border-top: 1px solid var(--hairline); flex: none; }
   .prange { font-size: 11.5px; color: var(--muted); font-family: var(--font-mono); }
   .pbtn { height: 24px; padding: 0 var(--s-3); border-radius: var(--r-sm); font-size: 12px; color: var(--ink-soft); border: 1px solid var(--border); background: var(--bg-content); }

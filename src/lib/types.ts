@@ -87,6 +87,9 @@ export interface QueryTab {
   sort: { col: string; dir: "asc" | "desc" } | null;
   offset: number;
   foreignKeys: ForeignKey[];
+  /** Result sets from a multi-statement run (empty/1 for a single statement). */
+  results: QueryResult[];
+  resultIdx: number;
 }
 
 /** A foreign-key edge: `column` → `ref_schema.ref_table.ref_column`. */
