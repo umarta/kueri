@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
   import Modal from "./Modal.svelte";
   import { api } from "../lib/tauri";
   import { upsertConnection } from "../lib/stores/connection";
@@ -64,6 +65,29 @@
       busy = false;
     }
   }
+
+  async function pickSqliteFile() {
+    try {
+      const selected = await open({
+        filters: [
+          {
+            name: "SQLite",
+            extensions: ["db", "sqlite", "sqlite3"],
+          },
+          {
+            name: "All Files",
+            extensions: ["*"],
+          },
+        ],
+      });
+
+      if (typeof selected === "string") {
+        config.file_path = selected;
+      }
+    } catch (e) {
+      error = `Failed to pick file: ${e}`;
+    }
+  }
 </script>
 
 <Modal title="{meta.label} Connection" width="480px" on:close={() => dispatch("close")}>
@@ -102,7 +126,12 @@
     {#if isSqlite}
       <label class="row">
         <span class="lbl">File path</span>
-        <input class="field" bind:value={config.file_path} placeholder="/path/to/db.sqlite" />
+        <div class="filepath-row">
+          <input class="field" bind:value={config.file_path} placeholder="/path/to/db.sqlite" />
+          <button class="btn btn-icon" type="button" on:click={pickSqliteFile} title="Browse for SQLite file">
+            Browse
+          </button>
+        </div>
       </label>
     {:else}
       <div class="row">
@@ -212,6 +241,10 @@
   .hostport .field:first-child { flex: 1; min-width: 0; }
   .sublbl { font-size: 12px; color: var(--faint); }
   .hostport .port { width: 76px; flex: none; }
+
+  .filepath-row { display: flex; align-items: center; gap: var(--s-3); }
+  .filepath-row .field { flex: 1; min-width: 0; }
+  .filepath-row .btn-icon { flex: none; padding: var(--s-2) var(--s-3); font-size: 12px; }
 
   .env { display: flex; align-items: center; gap: var(--s-4); }
   .dots { display: flex; gap: var(--s-2); }
