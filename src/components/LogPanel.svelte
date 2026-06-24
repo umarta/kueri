@@ -1,6 +1,6 @@
 <script lang="ts">
   import { afterUpdate, createEventDispatcher } from "svelte";
-  import { queryLog, clearLog } from "../lib/stores/log";
+  import { activityLog, clearActivity } from "../lib/stores/log";
 
   const dispatch = createEventDispatcher<{ close: void; pick: string }>();
 
@@ -9,8 +9,8 @@
   let q = "";
 
   $: shown = q.trim()
-    ? $queryLog.filter((e) => e.sql.toLowerCase().includes(q.trim().toLowerCase()))
-    : $queryLog;
+    ? $activityLog.filter((e) => e.sql.toLowerCase().includes(q.trim().toLowerCase()))
+    : $activityLog;
 
   // Keep the view pinned to the newest entry unless searching or scrolled up.
   afterUpdate(() => {
@@ -25,14 +25,14 @@
 <section class="log">
   <header class="lhead">
     <span class="ltitle">Query History</span>
-    <span class="lcount">{q ? `${shown.length}/${$queryLog.length}` : $queryLog.length}</span>
+    <span class="lcount">{q ? `${shown.length}/${$activityLog.length}` : $activityLog.length}</span>
     <div class="lsearch">
       <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       <input bind:value={q} placeholder="Search history…" spellcheck="false" />
       {#if q}<button class="lclear" on:click={() => (q = "")} aria-label="Clear search">✕</button>{/if}
     </div>
     <div class="spacer"></div>
-    <button class="lbtn" on:click={clearLog} title="Clear history">Clear</button>
+    <button class="lbtn" on:click={clearActivity} title="Clear history">Clear</button>
     <button class="lbtn icon" on:click={() => dispatch("close")} title="Hide history" aria-label="Hide history">
       <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
     </button>
