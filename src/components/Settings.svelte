@@ -71,6 +71,10 @@
           <div class="lbl"><span class="name">Alternating row colors</span><span class="desc">Tint every other row in the grid.</span></div>
           <label class="switch"><input type="checkbox" checked={$settings.altRows} on:change={(e) => settings.update((s) => ({ ...s, altRows: e.currentTarget.checked }))} /></label>
         </div>
+        <div class="row">
+          <div class="lbl"><span class="name">Show row detail panel</span><span class="desc">Open the detail panel when selecting a record.</span></div>
+          <label class="switch"><input type="checkbox" checked={$settings.showSidebarRowDetail} on:change={(e) => settings.update((s) => ({ ...s, showSidebarRowDetail: e.currentTarget.checked }))} /></label>
+        </div>
       {:else if section === "shortcuts"}
         <ul class="keys">
           {#each shortcuts as s (s.label)}

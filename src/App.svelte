@@ -1099,15 +1099,14 @@
     <Toolbar
       {sidebarOpen}
       {logOpen}
-      {detailOpen}
       readOnly={$readOnly}
       inTxn={activeInTxn}
       {txnBusy}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
+      on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
-      on:toggleDetail={() => (detailOpen = !detailOpen)}
       on:toggleReadOnly={() => readOnly.update((v) => !v)}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
@@ -1217,7 +1216,7 @@
                     fkColumns={new Set(tab.foreignKeys.map((f) => f.column))}
                     on:followFk={followFk}
                     on:commit={commitEdits}
-                    on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; detailOpen = true; sync(); }}
+                    on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; if ($settings.showSidebarRowDetail) detailOpen = true; sync(); }}
                     on:sortColumn={(e) => toggleSort(e.detail)}
                     on:deleteRows={deleteRows}
                   />

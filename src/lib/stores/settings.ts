@@ -12,10 +12,12 @@ export interface Settings {
   /** Optional folder holding the DB client tools (pg_dump/pg_restore/psql/mysqldump).
    *  Use this when your PATH copy is older than the server. */
   toolsPath: string;
+  /** Show row detail panel when a record is selected. */
+  showSidebarRowDetail: boolean;
 }
 
 const KEY = "kueri.settings";
-const defaults: Settings = { rowLimit: 200, altRows: true, theme: "auto", toolsPath: "" };
+const defaults: Settings = { rowLimit: 200, altRows: true, theme: "auto", toolsPath: "", showSidebarRowDetail: true };
 
 function load(): Settings {
   try {
