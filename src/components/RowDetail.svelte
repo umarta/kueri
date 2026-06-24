@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { DateInput } from "date-picker-svelte";
-  import { isDateTime, toDateValue, toDateString } from "../lib/datetime";
+  import { isDate, isDateTime, toDateValue, toDateString, toDateOnlyString } from "../lib/datetime";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -173,6 +173,16 @@
                   on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 ></textarea>
                 <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isDate(e.type)}
+                <DateInput
+                  class="rd-input"
+                  value={insert && !provided(e) ? new Date() : toDateValue(curStr(e))}
+                  format="yyyy-MM-dd"
+                  dynamicPositioning
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : "2020-12-31"}
+                  on:select={(ev) => setVal(e, toDateOnlyString(ev.detail))}
+                />
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDateTime(e.type)}
                 <DateInput
                   class="rd-input"

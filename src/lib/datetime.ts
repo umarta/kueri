@@ -6,10 +6,17 @@
 export const isDateTime = (t: string) =>
   /datetime|timestamp/i.test(t) && !/with time zone/i.test(t);
 
-/** Parse a DB datetime string into a Date (null when empty/unparseable). */
+/** Plain date columns (no time component). */
+export const isDate = (t: string) => /^date$/i.test(t.trim());
+
+/** Parse a DB date/datetime string into a Date (null when empty/unparseable). */
 export function toDateValue(value: string | null): Date | null {
   if (!value) return null;
-  const date = new Date(value.replace(" ", "T"));
+  let s = value.replace(" ", "T");
+  // A bare `YYYY-MM-DD` parses as UTC midnight, which can shift a day in
+  // negative-offset zones; pin it to local midnight instead.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s += "T00:00:00";
+  const date = new Date(s);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -19,4 +26,10 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 export function toDateString(value: Date | null): string | null {
   if (!value) return null;
   return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())} ${pad2(value.getHours())}:${pad2(value.getMinutes())}:${pad2(value.getSeconds())}`;
+}
+
+/** Format a Date back into `YYYY-MM-DD` (date-only columns). */
+export function toDateOnlyString(value: Date | null): string | null {
+  if (!value) return null;
+  return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
 }
