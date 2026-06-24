@@ -26,7 +26,7 @@
     inTransaction, setInTransaction,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
-  import { logSql } from "./lib/stores/log";
+  import { logSql, logActivity } from "./lib/stores/log";
   import type { ConnectionConfig, RowEdit, QueryTab } from "./lib/types";
 
   let sidebarOpen = true;
@@ -279,7 +279,7 @@
     return {
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
-      selected: null, editableTable: null, pkColumns: [], columns: [],
+      selected: null, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -287,7 +287,7 @@
     return {
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
-      selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
+      selected: { schema, table }, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -320,10 +320,14 @@
     const start = performance.now();
     try {
       t.result = await api.executeQuery($activeConnectionId, sql, t.id);
-      if (log) logSql(sql, { ms: Math.round(performance.now() - start) });
+      const ms = Math.round(performance.now() - start);
+      logActivity(sql, { ms });
+      if (log) logSql(sql, { ms });
     } catch (e) {
       t.error = String(e); t.result = null;
-      if (log) logSql(sql, { ms: Math.round(performance.now() - start), error: String(e) });
+      const ms = Math.round(performance.now() - start);
+      logActivity(sql, { ms, error: String(e) });
+      if (log) logSql(sql, { ms, error: String(e) });
     } finally {
       t.running = false; sync();
     }
@@ -392,10 +396,14 @@
       try {
         const r = await api.executeQuery($activeConnectionId!, s, t.id);
         collected.push(r);
-        logSql(s, { ms: Math.round(performance.now() - start) });
+        const ms = Math.round(performance.now() - start);
+        logActivity(s, { ms });
+        logSql(s, { ms });
       } catch (e) {
         t.error = `Statement ${idx + 1} of ${stmts.length} failed: ${(e as { message?: string })?.message ?? String(e)}`;
-        logSql(s, { ms: Math.round(performance.now() - start), error: String(e) });
+        const ms = Math.round(performance.now() - start);
+        logActivity(s, { ms, error: String(e) });
+        logSql(s, { ms, error: String(e) });
         break;
       }
     }
@@ -640,6 +648,7 @@
           .join(" AND ");
         const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
         await api.executeQuery($activeConnectionId, upd, t.id);
+        logActivity(upd);
       }
     } catch (err) {
       t.error = String(err); t.running = false; sync(); return;
@@ -759,6 +768,7 @@
           .join(" AND ");
         const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
         await api.executeQuery($activeConnectionId, del, t.id);
+        logActivity(del);
       }
     } catch (err) {
       t.error = String(err); t.running = false; sync();
@@ -814,6 +824,7 @@
     t.running = true; t.error = null; sync();
     try {
       await api.executeQuery($activeConnectionId, sql, t.id);
+      logActivity(sql);
     } catch (err) {
       t.error = String(err); t.running = false; sync();
       return;
@@ -1208,6 +1219,7 @@
                     bind:this={grid}
                     result={tab.result}
                     columns={tab.columns}
+                    bind:edits={tab.cellEdits}
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
@@ -1242,6 +1254,7 @@
                     result={tab.result}
                     index={tab.selectedRow}
                     columns={tab.columns}
+                    bind:edits={tab.cellEdits}
                     editable={editing}
                     insert={inserting}
                     initial={insertInitial}

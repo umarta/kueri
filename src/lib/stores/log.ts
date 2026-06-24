@@ -59,3 +59,38 @@ export function clearLog() {
 export function removeLog(id: number) {
   queryLog.update((l) => l.filter((e) => e.id !== id));
 }
+
+// ── Activity log ───────────────────────────────────────────────────────────
+// EVERY statement the app runs (table browses, cell edits, inserts/deletes,
+// console queries…). The bottom "Query History" panel shows this; the sidebar
+// "History" tab shows only console-run queries (queryLog above).
+const ACT_STORAGE = "kueri.activitylog";
+function loadAct(): LogEntry[] {
+  try {
+    const raw = localStorage.getItem(ACT_STORAGE);
+    return raw ? (JSON.parse(raw) as LogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+const initialAct = loadAct();
+export const activityLog = writable<LogEntry[]>(initialAct);
+activityLog.subscribe((l) => {
+  try {
+    localStorage.setItem(ACT_STORAGE, JSON.stringify(l));
+  } catch {
+    /* storage unavailable / quota */
+  }
+});
+let actSeq = initialAct.reduce((m, e) => Math.max(m, e.id), 0);
+
+export function logActivity(sql: string, opts: { ms?: number; error?: string } = {}) {
+  activityLog.update((l) => {
+    const next = [...l, { id: ++actSeq, ...stamp(), sql: sql.trim(), ms: opts.ms, error: opts.error }];
+    return next.length > MAX ? next.slice(next.length - MAX) : next;
+  });
+}
+
+export function clearActivity() {
+  activityLog.set([]);
+}

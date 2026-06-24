@@ -84,6 +84,8 @@ export interface QueryTab {
   editableTable: { schema: string; table: string } | null;
   pkColumns: string[];
   columns: ColumnInfo[];
+  /** Staged cell edits shared by the grid + row-detail panel, keyed `rowIndex:colIndex`. */
+  cellEdits: Record<string, string | null>;
   filters: FilterCond[];
   filtersOpen: boolean;
   selectedRow: number | null;
