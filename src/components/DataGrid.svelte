@@ -1,9 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher, tick } from "svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
-  import type { QueryResult, RowEdit } from "../lib/types";
+  import { DateInput } from "date-picker-svelte";
+  import { isDateTime, toDateValue, toDateString } from "../lib/datetime";
+  import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
+  /** Column metadata (types) for the browsed table — drives type-aware editors. */
+  export let columns: ColumnInfo[] = [];
   /** Editing is only safe when the result is a direct single-table browse. */
   export let editable = false;
   /** Currently selected row index (drives the detail panel + highlight). */
@@ -26,6 +30,8 @@
     deleteRows: number[];
     followFk: { column: string; value: string };
   }>();
+
+  $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
 
   // ── Multi-row selection (for copy / delete) ─────────────────────────────────
   let selected = new Set<number>();
@@ -428,7 +434,19 @@
                   on:keydown={(e) => { if (editable && (e.key === "Enter" || e.key === "F2")) { e.preventDefault(); startEdit(i, j, cell); } }}
                 >
                   {#if editing?.r === i && editing?.c === j}
-                    <input class="cell-input" bind:this={input} bind:value={draft} on:keydown={onKey} on:blur={commitCell} spellcheck="false" />
+                    {#if isDateTime(typeMap.get(v.name) ?? "")}
+                      <DateInput
+                        class="cell-input"
+                        value={toDateValue(draft)}
+                        format="yyyy-MM-dd HH:mm:ss"
+                        timePrecision="second"
+                        closeOnSelection
+                        dynamicPositioning
+                        on:select={(ev) => { draft = toDateString(ev.detail) ?? ""; commitCell(); refocusGrid(); }}
+                      />
+                    {:else}
+                      <input class="cell-input" bind:this={input} bind:value={draft} on:keydown={onKey} on:blur={commitCell} spellcheck="false" />
+                    {/if}
                   {:else}
                     {display(i, j, cell)}
                     {#if fkColumns.has(v.name) && !isNull(cell)}
@@ -608,7 +626,10 @@
     box-shadow: inset 0 0 0 1px rgba(255, 214, 10, 0.35);
   }
   .row:hover .cell.edited { background: rgba(255, 214, 10, 0.16); }
-  .cell.active { padding: 0; box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell.active { padding: 0; box-shadow: inset 0 0 0 2px var(--accent); overflow: visible; z-index: 10; }
+  /* date-picker popup inside the grid: keep it above sibling rows. */
+  .cell.active :global(.date-time-field) { width: 100%; }
+  .cell.active :global(.picker) { z-index: var(--z-dropdown); }
   .cell-input {
     width: 100%; height: 100%; padding: 0 var(--s-4);
     border: none; outline: none; background: var(--bg-content); color: var(--ink);
