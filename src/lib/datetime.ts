@@ -3,8 +3,10 @@
 // Tz-aware types (Postgres `timestamp with time zone`) are excluded: the picker
 // round-trips through local Date components, which would silently shift the
 // stored instant. Covers MySQL datetime/timestamp + pg `timestamp without time zone`.
-export const isDateTime = (t: string) =>
-  /datetime|timestamp/i.test(t) && !/with time zone/i.test(t);
+// Covers datetime / timestamp / timestamp with time zone (the original PR
+// behaviour). The picker round-trips through local Date components, so a
+// tz-aware value is shown/saved in local time.
+export const isDateTime = (t: string) => /datetime|timestamp/i.test(t);
 
 /** Plain date columns (no time component). */
 export const isDate = (t: string) => /^date$/i.test(t.trim());
