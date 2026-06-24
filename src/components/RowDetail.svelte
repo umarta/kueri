@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { DateInput } from "date-picker-svelte";
+  import { isDateTime, toDateValue, toDateString } from "../lib/datetime";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -45,11 +46,6 @@
 
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
-  // Tz-aware types (Postgres `timestamp with time zone`) are excluded: the picker
-  // round-trips through local Date components, which would silently shift the
-  // stored instant. They stay as text. Covers MySQL datetime/timestamp + pg
-  // `timestamp without time zone`.
-  const isDateTime = (t: string) => /datetime|timestamp/i.test(t) && !/with time zone/i.test(t);
   const isInteger = (t: string) => /\b(int|integer|smallint|bigint|tinyint|mediumint|serial|oid)\b/i.test(t);
   const isNumeric = (t: string) => /\b(decimal|numeric|float|double|real|money)\b/i.test(t);
   const isNull = (v: unknown) => v === null || v === undefined;
@@ -94,22 +90,6 @@
   }
   const jsonDisplay = (e: Entry) =>
     e.col in edits ? edits[e.col] ?? "" : insert ? "" : prettyJson(fmt(row?.[e.i]));
-
-  function toDateValue(value: string | null): Date | null {
-    if (!value) return null;
-    const normalized = value.replace(" ", "T");
-    const date = new Date(normalized);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  function pad2(value: number) {
-    return String(value).padStart(2, "0");
-  }
-
-  function toDateString(value: Date | null): string | null {
-    if (!value) return null;
-    return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())} ${pad2(value.getHours())}:${pad2(value.getMinutes())}:${pad2(value.getSeconds())}`;
-  }
 
   function openMenu(e: Entry, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();

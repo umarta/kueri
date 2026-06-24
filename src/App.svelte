@@ -1207,6 +1207,7 @@
                   <DataGrid
                     bind:this={grid}
                     result={tab.result}
+                    columns={tab.columns}
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
