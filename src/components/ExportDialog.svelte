@@ -202,7 +202,9 @@
 <style>
   .backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); }
   .panel { width: min(520px, 92vw); display: flex; flex-direction: column; background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); overflow: hidden; }
-  .head { display: flex; align-items: baseline; gap: var(--s-3); padding: var(--s-4) var(--s-5); border-bottom: 1px solid var(--hairline); }
+  .head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-5); border-bottom: 1px solid var(--hairline); }
+  .x { margin-left: auto; width: 28px; height: 28px; border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: 14px; display: grid; place-items: center; }
+  .x:hover { background: var(--bg-elevated); color: var(--ink); }
   .title { font-size: 13px; font-weight: 600; color: var(--ink); }
   .db { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
 

@@ -459,6 +459,7 @@
 {#if confirmDrop}
   <div class="cdrop-backdrop" role="button" tabindex="-1" on:click|self={() => (confirmDrop = null)} on:keydown={() => {}}>
     <div class="cdrop" role="dialog" aria-modal="true">
+      <button class="cdrop-x" on:click={() => (confirmDrop = null)} aria-label="Close" title="Close">✕</button>
       <p>Drop column <code>{confirmDrop}</code> from <code>{table}</code>? This deletes its data.</p>
       {#if error}<p class="err inline">{error}</p>{/if}
       <div class="cdrop-foot">
@@ -598,7 +599,9 @@
 
   /* tiny confirm popover */
   .cdrop-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: 40px; background: rgba(0,0,0,0.45); }
-  .cdrop { width: min(380px, 100%); background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); padding: var(--s-6) var(--s-7); }
+  .cdrop { position: relative; width: min(380px, 100%); background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); padding: var(--s-6) var(--s-7); }
+  .cdrop-x { position: absolute; right: 8px; top: 8px; width: 30px; height: 30px; border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: 15px; display: grid; place-items: center; }
+  .cdrop-x:hover { background: var(--bg-elevated); color: var(--ink); }
   .cdrop p { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.55; }
   .cdrop code { font-family: var(--font-mono); color: var(--ink); background: var(--bg-elevated); padding: 0 4px; border-radius: var(--r-xs); }
   .cdrop-foot { display: flex; gap: var(--s-3); justify-content: flex-end; margin-top: var(--s-5); }
