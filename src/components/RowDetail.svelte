@@ -200,14 +200,14 @@
                   />
                   <select
                     class="rd-input rd-select rd-tzsel"
-                    aria-label="Time zone offset"
+                    aria-label="Time zone"
                     value={tz.offset}
                     on:change={(ev) => setVal(e, combineTz(tz.wall || (toDateString(new Date()) ?? ""), ev.currentTarget.value))}
                   >
-                    {#each TZ_OFFSETS as o (o)}<option value={o}>UTC{o}</option>{/each}
+                    {#each TZ_OFFSETS as z (z.offset)}<option value={z.offset}>{z.label} (UTC{z.offset})</option>{/each}
                   </select>
                 </div>
-                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+                <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDateTime(e.type)}
                 <DateInput
                   class="rd-input"
@@ -341,10 +341,10 @@
   .rd-menu-btn.top { top: 5px; transform: none; }
   .rd-menu-btn:hover { color: var(--ink); background: var(--bg-elevated); }
 
-  /* timestamp-with-time-zone: picker + UTC-offset selector */
-  .rd-tzrow { display: flex; gap: var(--s-2); align-items: center; padding-right: 22px; }
-  .rd-tzrow :global(.date-time-field) { flex: 1; min-width: 0; }
-  .rd-tzsel { flex: none; width: 104px; height: 30px; }
+  /* timestamp-with-time-zone: picker stacked over a (human-labelled) zone select */
+  .rd-tzrow { display: flex; flex-direction: column; gap: var(--s-2); padding-right: 22px; }
+  .rd-tzrow :global(.date-time-field) { width: 100%; }
+  .rd-tzsel { width: 100%; height: 30px; }
 
   .menu-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
   .rd-menu {
