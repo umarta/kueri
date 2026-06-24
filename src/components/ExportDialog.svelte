@@ -3,25 +3,60 @@
   import { save } from "@tauri-apps/plugin-dialog";
   import { api } from "../lib/tauri";
   import { settings } from "../lib/stores/settings";
+  import { qTable, buildInserts } from "../lib/sqlexport";
   import type { ConnectionConfig } from "../lib/types";
 
   export let cfg: ConnectionConfig;
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  let format: "plain" | "custom" = "plain";
+  // "plain" = native in-app SQL (no external tool); "custom" = pg_dump binary;
+  // "copy" = SQLite file copy.
+  let format: "plain" | "custom" | "copy" = "plain";
   let contents: "all" | "schema" | "data" = "all";
   let busy = false;
   let result: { ok: boolean; msg: string } | null = null;
+  let queryNonce = 0;
 
   $: isPg = cfg.kind === "postgres";
-  $: isMysql = cfg.kind === "mysql";
   $: isSqlite = cfg.kind === "sqlite";
+
+  // Generate the dump ourselves over the connection — version-independent, so it
+  // never hits the "client older than server" pg_dump error.
+  async function nativeExport(): Promise<string> {
+    const id = cfg.id;
+    const out: string[] = [`-- Kueri SQL export`, `-- ${cfg.database} · ${cfg.kind}`, ""];
+    const schemas = await api.listSchemas(id);
+    for (const s of schemas) {
+      const tables = await api.listTables(id, s.name);
+      for (const t of tables) {
+        const isView = /view/i.test(t.kind);
+        if (contents !== "data") {
+          try {
+            const ddl = await api.tableDdl(id, s.name, t.name);
+            if (ddl) out.push(ddl, "");
+          } catch {
+            /* skip objects we can't reproduce */
+          }
+        }
+        if (contents !== "schema" && !isView) {
+          const res = await api.executeQuery(
+            id,
+            `SELECT * FROM ${qTable(cfg.kind, s.name, t.name)}`,
+            `export-${queryNonce++}`,
+          );
+          const ins = buildInserts(cfg.kind, s.name, t.name, res.columns, res.rows);
+          if (ins) out.push(ins, "");
+        }
+      }
+    }
+    return out.join("\n");
+  }
 
   async function run() {
     result = null;
-    const ext = isSqlite ? "sqlite" : format === "custom" ? "dump" : "sql";
-    const filterName = isSqlite ? "SQLite database" : format === "custom" ? "Postgres dump" : "SQL";
+    const ext = format === "copy" ? "sqlite" : format === "custom" ? "dump" : "sql";
+    const filterName = format === "copy" ? "SQLite database" : format === "custom" ? "Postgres dump" : "SQL";
     const path = await save({
       defaultPath: `${cfg.database || "database"}.${ext}`,
       filters: [{ name: filterName, extensions: [ext] }],
@@ -29,8 +64,13 @@
     if (!path) return; // cancelled
     busy = true;
     try {
-      const msg = await api.pgExport(cfg, path, format, contents, $settings.toolsPath);
-      result = { ok: true, msg: `${msg}\nSaved to ${path}` };
+      if (format === "plain") {
+        await api.writeTextFile(path, await nativeExport());
+        result = { ok: true, msg: `Exported SQL.\nSaved to ${path}` };
+      } else {
+        const msg = await api.pgExport(cfg, path, format, contents, $settings.toolsPath);
+        result = { ok: true, msg: `${msg}\nSaved to ${path}` };
+      }
     } catch (e) {
       result = { ok: false, msg: (e as { message?: string })?.message ?? String(e) };
     } finally {
@@ -48,16 +88,20 @@
     </header>
 
     <div class="body">
-      {#if isPg}
+      {#if isPg || isSqlite}
         <div class="ed-field">
           <span class="lbl">Format</span>
           <div class="seg">
             <button class:active={format === "plain"} on:click={() => (format = "plain")}>Plain SQL (.sql)</button>
-            <button class:active={format === "custom"} on:click={() => (format = "custom")}>Custom (.dump)</button>
+            {#if isPg}
+              <button class:active={format === "custom"} on:click={() => (format = "custom")}>Custom (.dump)</button>
+            {:else}
+              <button class:active={format === "copy"} on:click={() => (format = "copy")}>File copy (.sqlite)</button>
+            {/if}
           </div>
         </div>
       {/if}
-      {#if !isSqlite}
+      {#if format !== "copy"}
         <div class="ed-field">
           <span class="lbl">Contents</span>
           <div class="seg">
@@ -68,7 +112,7 @@
         </div>
       {/if}
       <p class="hint">
-        {#if isPg}Runs <code>pg_dump</code> (PostgreSQL client tools).{:else if isMysql}Runs <code>mysqldump</code> (MySQL client tools).{:else}Copies the SQLite database file.{/if}
+        {#if format === "plain"}Generated in-app over the connection — no external tools, no version mismatch.{:else if format === "custom"}Runs <code>pg_dump -Fc</code> (needs PostgreSQL client tools matching the server).{:else}Copies the SQLite database file.{/if}
       </p>
 
       {#if result}
