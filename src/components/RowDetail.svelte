@@ -24,15 +24,23 @@
     close: void;
   }>();
 
-  let edits: Record<string, string | null> = {};
-  let key = "";
+  // Edit mode shares the staged-edit set with the grid (keyed `rowIndex:colIndex`),
+  // so a change in either surface shows in both. Insert mode keeps its own map.
+  export let edits: Record<string, string | null> = {};
+  let insertEdits: Record<string, string | null> = {};
+  let insertKey = "";
+  let prevIndex: number | null = null;
   let menu: { col: string; i: number; right: number; top: number; json: boolean } | null = null;
 
-  // Reset when the target changes (row selection, or entering/leaving insert mode).
-  $: rowKey = insert ? `insert:${insertNonce}` : `${result?.columns.length ?? 0}:${index}`;
-  $: if (rowKey !== key) {
-    key = rowKey;
-    edits = insert && initial ? { ...initial } : {};
+  // Re-seed the insert form on each new insert/duplicate; clear the menu on row change.
+  $: insertSig = `insert:${insertNonce}`;
+  $: if (insert && insertSig !== insertKey) {
+    insertKey = insertSig;
+    insertEdits = initial ? { ...initial } : {};
+    menu = null;
+  }
+  $: if (index !== prevIndex) {
+    prevIndex = index;
     menu = null;
   }
 
@@ -61,10 +69,13 @@
   const minifyJson = (s: string) => { try { return JSON.stringify(JSON.parse(s)); } catch { return s; } };
 
   const NULLK = "\0NULL";
+  const ek = (e: Entry) => `${index}:${e.i}`; // shared key for edit mode
+  const has = (e: Entry) => (insert ? e.col in insertEdits : ek(e) in edits);
+  const getv = (e: Entry) => (insert ? insertEdits[e.col] : edits[ek(e)]);
   const orig = (e: Entry) => (insert ? "" : isNull(row?.[e.i]) ? NULLK : fmt(row?.[e.i]));
-  const curStr = (e: Entry) => (e.col in edits ? edits[e.col] ?? "" : insert ? "" : fmt(row?.[e.i]));
-  const nulled = (e: Entry) => (e.col in edits ? edits[e.col] === null : insert ? false : isNull(row?.[e.i]));
-  const provided = (e: Entry) => e.col in edits; // insert: was this column given a value?
+  const curStr = (e: Entry) => (has(e) ? getv(e) ?? "" : insert ? "" : fmt(row?.[e.i]));
+  const nulled = (e: Entry) => (has(e) ? getv(e) === null : insert ? false : isNull(row?.[e.i]));
+  const provided = (e: Entry) => has(e); // insert: was this column given a value?
   const isEnum = (e: Entry) => (enumMap.get(e.col)?.length ?? 0) > 0;
   // Options for an enum select; keep the current value even if it's not in the set.
   function enumOpts(e: Entry): string[] {
@@ -78,21 +89,27 @@
 
   function setVal(e: Entry, v: string | null) {
     if (insert) {
-      if (v === "") delete edits[e.col];
-      else edits[e.col] = v;
+      if (v === "") delete insertEdits[e.col];
+      else insertEdits[e.col] = v;
+      insertEdits = insertEdits;
     } else {
       const nk = v === null ? NULLK : v;
-      if (nk === orig(e)) delete edits[e.col];
-      else edits[e.col] = v;
+      if (nk === orig(e)) delete edits[ek(e)];
+      else edits[ek(e)] = v;
+      edits = edits;
     }
-    edits = edits;
   }
   function unset(e: Entry) {
-    delete edits[e.col];
-    edits = edits;
+    if (insert) {
+      delete insertEdits[e.col];
+      insertEdits = insertEdits;
+    } else {
+      delete edits[ek(e)];
+      edits = edits;
+    }
   }
   const jsonDisplay = (e: Entry) =>
-    e.col in edits ? edits[e.col] ?? "" : insert ? "" : prettyJson(fmt(row?.[e.i]));
+    has(e) ? getv(e) ?? "" : insert ? "" : prettyJson(fmt(row?.[e.i]));
 
   function openMenu(e: Entry, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
@@ -100,15 +117,23 @@
   }
   const menuEntry = (): Entry | undefined => entries.find((x) => x.col === menu?.col);
 
-  $: dirty = Object.keys(edits).length;
+  // Staged values for the current row (edit) or the insert form, keyed by column.
+  $: rowEdits = insert
+    ? insertEdits
+    : Object.fromEntries(
+        Object.entries(edits)
+          .filter(([k]) => Number(k.split(":")[0]) === index)
+          .map(([k, v]) => [result?.columns[Number(k.split(":")[1])] ?? "", v]),
+      );
+  $: dirty = Object.keys(rowEdits).length;
   $: hasForm = insert ? columns.length > 0 : !!(result && row);
 
   function save() {
     if (!result || index === null || !dirty) return;
-    dispatch("commit", [{ rowIndex: index, original: result.rows[index], updates: { ...edits } }]);
+    dispatch("commit", [{ rowIndex: index, original: result.rows[index], updates: { ...rowEdits } }]);
   }
   function doInsert() {
-    dispatch("insert", { ...edits });
+    dispatch("insert", { ...insertEdits });
   }
 </script>
 
@@ -132,7 +157,7 @@
           </div>
 
           {#if insert || editable}
-            <div class="rd-control" class:edited={e.col in edits} class:nulled={nulled(e)}>
+            <div class="rd-control" class:edited={has(e)} class:nulled={nulled(e)}>
               {#if isEnum(e)}
                 <select
                   class="rd-input rd-select"
@@ -187,7 +212,7 @@
                 />
                 <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDateTimeTz(e.type)}
-                {@const tz = splitTz(e.col in edits ? edits[e.col] : insert ? "" : fmt(row?.[e.i]))}
+                {@const tz = splitTz(has(e) ? getv(e) : insert ? "" : fmt(row?.[e.i]))}
                 <div class="rd-tzrow">
                   <DateInput
                     class="rd-input"

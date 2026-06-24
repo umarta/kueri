@@ -111,8 +111,8 @@
   const GUTTER = 48;
   const ROW_H = 28;
 
-  // ── Staged edits ──────────────────────────────────────────────────────────
-  let edits: Record<string, string> = {};
+  // ── Staged edits (shared with the row-detail panel via the parent) ──────────
+  export let edits: Record<string, string | null> = {};
   let editing: { r: number; c: number } | null = null;
   let draft = "";
   let prev: QueryResult | null = null;
@@ -137,14 +137,16 @@
     return String(v);
   }
   const isNull = (v: unknown) => v === null || v === undefined;
-  const display = (r: number, c: number, raw: unknown) =>
-    key(r, c) in edits ? edits[key(r, c)] : fmt(raw);
+  const display = (r: number, c: number, raw: unknown) => {
+    const k = key(r, c);
+    return k in edits ? edits[k] === null ? "NULL" : edits[k] : fmt(raw);
+  };
 
   async function startEdit(r: number, c: number, raw: unknown, seed?: string) {
     if (!editable) return;
     editing = { r, c };
     const k = key(r, c);
-    draft = seed !== undefined ? seed : k in edits ? edits[k] : isNull(raw) ? "" : fmt(raw);
+    draft = seed !== undefined ? seed : k in edits ? edits[k] ?? "" : isNull(raw) ? "" : fmt(raw);
     await tick();
     input?.focus();
     if (seed === undefined) input?.select();

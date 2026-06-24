@@ -279,7 +279,7 @@
     return {
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
-      selected: null, editableTable: null, pkColumns: [], columns: [],
+      selected: null, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -287,7 +287,7 @@
     return {
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
-      selected: { schema, table }, editableTable: null, pkColumns: [], columns: [],
+      selected: { schema, table }, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -1208,6 +1208,7 @@
                     bind:this={grid}
                     result={tab.result}
                     columns={tab.columns}
+                    bind:edits={tab.cellEdits}
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
@@ -1242,6 +1243,7 @@
                     result={tab.result}
                     index={tab.selectedRow}
                     columns={tab.columns}
+                    bind:edits={tab.cellEdits}
                     editable={editing}
                     insert={inserting}
                     initial={insertInitial}
