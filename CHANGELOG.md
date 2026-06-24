@@ -4,6 +4,25 @@ All notable changes to Kueri are documented here. This project adheres to
 [Semantic Versioning](https://semver.org) and the spirit of
 [Keep a Changelog](https://keepachangelog.com).
 
+## [0.4.0] — 2026-06-25
+
+Serious-client features and a much richer editing experience.
+
+### Added
+- **Manual transactions** — Begin / Commit / Rollback from the toolbar, on a pinned connection; a TXN badge shows the open state. (#56)
+- **Native SQL export** — Plain-SQL dumps are generated in-app over the connection, so they never hit a `pg_dump` client/server version mismatch. (#66)
+- **Matching client tools, automatically** — for the binary Custom (`.dump`) format, Kueri detects every installed PostgreSQL client version, auto-selects the one matching the server, and offers to install it (Homebrew) or open the download page if none matches. A manual *Settings → Client tools folder* still overrides. (#67)
+- **Type-aware temporal editors** — `date` (date-only), `datetime`/`timestamp`, and `timestamp with time zone` columns get a calendar **date picker** in both the grid and the row-detail panel; tz columns also get a **human-labelled timezone selector** (e.g. “Jakarta (WIB) · Bangkok (UTC+07:00)”). (#100, #105, #106, #107)
+- **Synced editing** — staged edits are shared between the grid and the row-detail panel, so a change in either surface shows in both and ⌘S commits all of them. (#107)
+- **Activity log** — the bottom “Query History” panel now records everything the app runs (browses, edits, inserts/deletes, console), kept separate from the sidebar **History** of console-only runs. (#107)
+- **Global close button** — every modal has a consistent close (✕). (#104)
+- **Row-detail toggle** — a setting controls whether selecting a row auto-opens the detail panel. (#103)
+
+### Fixed
+- **Linux blank-window / WebKitGTK crash** — disable the DMABUF renderer at startup; README clarifies runtime vs build dependencies (prefer `.deb`/`.rpm`). (#98)
+- **Export dialog** — `.field` CSS collision squished the layout; date-picker inputs now match the app theme (dark/light) instead of a white box. (#64)
+- README rewritten with screenshots + a repeatable Playwright capture tool.
+
 ## [0.3.0] — 2026-06-24
 
 A big step toward TablePlus/Navicat parity.
@@ -80,6 +99,7 @@ Initial public release.
 - Query log, command palette, native menu + keyboard shortcuts, Settings.
 - OS keychain credential storage; signed-less release builds for macOS, Windows and Linux.
 
+[0.4.0]: https://github.com/umarta/kueri/releases/tag/v0.4.0
 [0.3.0]: https://github.com/umarta/kueri/releases/tag/v0.3.0
 [0.2.0]: https://github.com/umarta/kueri/releases/tag/v0.2.0
 [0.1.0]: https://github.com/umarta/kueri/releases/tag/v0.1.0
