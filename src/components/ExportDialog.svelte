@@ -141,6 +141,7 @@
     <header class="head">
       <span class="title">Export database</span>
       <span class="db">{cfg.database}</span>
+      <button class="x" on:click={() => dispatch("close")} aria-label="Close">✕</button>
     </header>
 
     <div class="body">
@@ -190,7 +191,6 @@
     </div>
 
     <footer class="foot">
-      <button class="btn ghost" on:click={() => dispatch("close")}>{result?.ok ? "Done" : "Cancel"}</button>
       <button class="btn primary" on:click={run} disabled={busy}>
         {busy ? "Exporting…" : "Choose file & export"}
       </button>

@@ -554,7 +554,6 @@
 
     {#if createError}<p class="cerr">{createError}</p>{/if}
     <svelte:fragment slot="footer">
-      <button class="btn ghost" on:click={() => (showAdd = false)}>Cancel</button>
       <button class="btn primary" on:click={createTable} disabled={!newName.trim() || creating}>
         {creating ? "Creating…" : "Create table"}
       </button>
@@ -572,7 +571,6 @@
     </label>
     {#if renameError}<p class="cerr">{renameError}</p>{/if}
     <svelte:fragment slot="footer">
-      <button class="btn ghost" on:click={() => (showRename = false)}>Cancel</button>
       <button class="btn primary" on:click={doRename} disabled={!renameValue.trim() || renaming}>
         {renaming ? "Renaming…" : "Rename"}
       </button>
@@ -588,7 +586,6 @@
     </p>
     {#if dropError}<p class="cerr">{dropError}</p>{/if}
     <svelte:fragment slot="footer">
-      <button class="btn ghost" on:click={() => (showDrop = false)}>Cancel</button>
       <button class="btn danger" on:click={doDrop} disabled={dropping}>
         {dropping ? "Dropping…" : "Drop table"}
       </button>
@@ -607,7 +604,6 @@
     <p class="fhint">Copies structure + data of <code>{dupTarget}</code> (indexes/constraints not copied).</p>
     {#if dupError}<p class="cerr">{dupError}</p>{/if}
     <svelte:fragment slot="footer">
-      <button class="btn ghost" on:click={() => (showDup = false)}>Cancel</button>
       <button class="btn primary" on:click={doDuplicate} disabled={!dupValue.trim() || duplicating}>
         {duplicating ? "Duplicating…" : "Duplicate"}
       </button>
@@ -623,7 +619,6 @@
     </p>
     {#if truncError}<p class="cerr">{truncError}</p>{/if}
     <svelte:fragment slot="footer">
-      <button class="btn ghost" on:click={() => (showTruncate = false)}>Cancel</button>
       <button class="btn danger" on:click={doTruncate} disabled={truncating}>
         {truncating ? "Truncating…" : "Truncate"}
       </button>
