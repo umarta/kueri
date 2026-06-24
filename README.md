@@ -1,41 +1,82 @@
-<img src="docs/logo.png" alt="Kueri" width="120" />
+<div align="center">
+
+<img src="docs/logo.png" alt="Kueri" width="96" />
 
 # Kueri
 
-**A lightweight, native, open-source multi-database GUI client.**
+**A fast, native, open-source multi-database GUI client.**
 
-The speed and minimalism of TablePlus — open source. One clean UI for every database, with backend differences hidden behind a single `Driver` trait. Built on Tauri (not Electron): a tiny binary and low memory, using the system webview.
+The speed and minimalism of TablePlus — open source. One calm, keyboard-first UI for every
+database, with all backend differences hidden behind a single Rust `Driver` trait. Built on
+Tauri, not Electron: a tiny binary and low memory using the system webview.
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)![Svelte](https://img.shields.io/badge/Svelte-4-FF3E00?logo=svelte&logoColor=white)![Rust](https://img.shields.io/badge/Rust-sqlx-000000?logo=rust&logoColor=white)![Platform](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-grey)[Features](#features) · [Getting started](#getting-started) · [Shortcuts](#keyboard-shortcuts) · [Architecture](#architecture) · [Contributing](#contributing)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)&nbsp;[![Latest release](https://img.shields.io/github/v/release/umarta/kueri?label=download&color=0a84ff)](https://github.com/umarta/kueri/releases/latest)&nbsp;![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)&nbsp;![Svelte 4](https://img.shields.io/badge/Svelte-4-FF3E00?logo=svelte&logoColor=white)&nbsp;![Rust + sqlx](https://img.shields.io/badge/Rust-sqlx-000000?logo=rust&logoColor=white)&nbsp;![macOS · Windows · Linux](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-grey)
 
-> [!NOTE] 💡
-> Status: active development. PostgreSQL, MySQL/MariaDB and SQLite are fully usable for daily work. SQL Server and Redis/MongoDB are documented stubs.
+[**Download**](https://github.com/umarta/kueri/releases/latest) · [Features](#features) · [Screenshots](#screenshots) · [Install](#install) · [Shortcuts](#keyboard-shortcuts) · [Architecture](#architecture) · [Contributing](#contributing)
+
+<br />
+
+<img src="docs/screenshots/02-grid.png" alt="Browsing a table in Kueri" width="900" />
+
+</div>
+
+> [!NOTE]
+> Active development. PostgreSQL, MySQL/MariaDB and SQLite are fully usable for daily work.
+> SQL Server, Redis and MongoDB are documented stubs.
 
 ## Why Kueri?
 
-Most database GUIs are either heavy (Electron/Java), closed-source, or paid. Kueri keeps a single, calm, keyboard-first interface and pushes every database-specific detail behind one Rust abstraction — so the app stays small and behaves identically whether you're on Postgres, MySQL, or SQLite.
+Most database GUIs are heavy (Electron/Java), closed-source, or paid. Kueri stays small and
+consistent: one keyboard-first interface, every database-specific detail pushed behind one Rust
+abstraction — so it behaves identically on Postgres, MySQL, or SQLite, and starts in a blink.
+
+- **Tiny & native** — a Tauri binary on the system webview, not a bundled browser.
+- **Keyboard-first** — run, format, commit, switch tabs, and open anything (`⌘P`) without touching the mouse.
+- **One abstraction** — the UI never branches on database type; adding a driver is a single Rust file.
+- **Safe by default** — passwords in the OS keychain, a read-only lock for production, precise primary-key-aware writes.
+
+## Screenshots
+
+| Browse & edit | Row detail — typed editors |
+| :---: | :---: |
+| <img src="docs/screenshots/02-grid.png" width="430" alt="Data grid" /> | <img src="docs/screenshots/03-row-detail.png" width="430" alt="Row detail panel" /> |
+| **Query editor + results** | **Structure — columns & indexes** |
+| <img src="docs/screenshots/05-query-editor.png" width="430" alt="SQL editor" /> | <img src="docs/screenshots/04-structure.png" width="430" alt="Structure view" /> |
 
 ## Features
 
-- **One UI for every database** — the interface never branches on database type.
-- **Multi-connection workspaces** — keep several databases open in a left rail and switch instantly; each keeps its own tabs.
-- **Schema browser** — schema switcher and a filterable table list.
-- **SQL editor** — CodeMirror with schema-aware context, per tab, `⌘↵` to run. Table tabs (grid) and query tabs (editor) are separate.
-- **Fast result grid** — virtualized for large result sets, with inline cell editing, **sort** by header, **pagination**, **find-in-results**, **show/hide columns** (persisted per table), multi-row **select + copy**, **delete** and **duplicate** rows.
-- **Safe edits** — commits write a precise primary-key-aware `UPDATE`; big integers keep full precision. Query results are editable when the query is a simple single-table `SELECT *`.
-- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); empty fields fall back to column defaults. **Enum columns** edit via a dropdown.
-- **Row detail panel** — edit a row field-by-field with type-aware controls (boolean & enum dropdowns, JSON pretty/minify, quick `NULL`/empty).
-- **Filters** — build `WHERE` conditions without writing SQL.
-- **Structure tab** — TablePlus-style two-pane view: a columns grid (type / nullable / default / **foreign key** / comment) and an indexes grid; **manage indexes & foreign keys**, view the **CREATE / DDL**.
-- **Foreign-key navigation** — click an FK cell to jump to the referenced row.
-- **Table & column management** — create / rename / drop / truncate / duplicate tables and add / rename / drop columns; all DDL is generated per dialect in the backend.
-- **Import & export** — import CSV into a table (column mapping + preview) and export results to CSV / JSON; PostgreSQL backup & restore (`pg_dump` / `pg_restore`).
-- **Read-only / safe mode** — a per-connection lock that blocks writes & DDL (defaults on for production-tagged connections).
-- **Query history** — persistent, searchable, click-to-load; cancel a running query with `⌘.`.
-- **SQL formatter** (`⇧⌘F`), **command palette** (`⌘P`) to open any table.
-- **Connect anywhere** — SSL/TLS options and an optional **SSH tunnel** per connection.
-- **Native menu bar & Settings**, keyboard-first throughout.
+### Connect
+- **Multi-connection workspaces** — keep several databases open in a left rail and switch instantly; each keeps its own tabs. **Session restore** reopens them on launch.
+- **Connect anywhere** — SSL/TLS options and an optional **SSH tunnel** per connection; colour-, tag- and group your connections.
 - **Safe credentials** — connections persist to disk; passwords go to the OS keychain, never plaintext.
+
+### Browse & edit
+- **Fast result grid** — virtualized for large results: **sort** by header, **paginate**, **find-in-results**, **show/hide columns** (persisted per table), multi-row **select + copy**, **delete** and **duplicate** rows.
+- **Inline & detail editing** — edit in the grid or a field-by-field **row-detail panel** with type-aware controls: boolean & enum dropdowns, JSON pretty/minify, quick `NULL`, and **date / time / timezone pickers** for temporal columns. Edits stay in sync across both surfaces.
+- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); empty fields fall back to column defaults.
+- **Filters & FK navigation** — build `WHERE` conditions without SQL; click a foreign-key cell to jump to the referenced row.
+- **Safe writes** — commits are precise primary-key-aware `UPDATE`s; big integers keep full precision.
+
+### Write SQL
+- **CodeMirror editor** — schema-aware autocomplete, per-tab, `⌘↵` to run, **find & replace**, and **format** (`⇧⌘F`).
+- **Multi-statement** scripts with a result-set switcher; **cancel** a long query (`⌘.`); **EXPLAIN**; **generate SQL** (SELECT/INSERT/UPDATE/CREATE) from any table.
+- **Transactions** — manual **Begin / Commit / Rollback** on a pinned connection.
+- **Saved queries** and a date-grouped, searchable **History** of console runs (with a right-click menu), kept separate from the **activity log** that records everything the app runs.
+
+### Schema & structure
+- **Three-tab sidebar** — Items (tables/views, expandable to columns), Queries, History.
+- **Structure tab** — TablePlus-style two-pane columns + indexes grids (type / nullable / default / **foreign key** / **comment**); **manage indexes & foreign keys** and view the **CREATE / DDL**.
+- **Object & DDL management** — create / rename / drop / truncate / duplicate tables, add / rename / drop columns, and **create / drop database & schema** — all DDL generated per dialect in the backend.
+- **Server tools** — a **Server Monitor** (running queries + kill) and a **users / roles** list.
+
+### Import, export & backup
+- **Native SQL export** — generated in-app over the connection, so it never hits a client/server version mismatch (no external tools required).
+- **Backup & restore** — `pg_dump` / `pg_restore` custom format with **automatic matching-client detection & install**, MySQL `mysqldump`, and SQLite file copy.
+- **CSV import** — into a table, with column mapping and a preview.
+
+### Productivity
+- **Command palette** (`⌘P`) to open any table; **read-only / safe mode** lock (auto-on for production-tagged connections).
+- **Light / dark / auto** theme, native menu bar & Settings, keyboard-first throughout.
 
 ## Supported databases
 
@@ -196,25 +237,31 @@ No UI or command changes are needed.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). The latest release, **v0.3.0**, brings Kueri close to TablePlus/Navicat parity: keyboard grid nav, multi-statement, 3-tab sidebar, server monitor, themes, backup parity, and much more.
+Every release is recorded in [CHANGELOG.md](CHANGELOG.md). Recent work brought Kueri close to
+TablePlus / Navicat parity — keyboard-driven grid, multi-statement scripts, the three-tab sidebar,
+manual transactions, server monitor, themes, native + matching-client backups, and type-aware
+date/time/timezone editors.
 
 ## Roadmap
 
-- [x] Duplicate / delete rows · sort · show/hide columns — shipped in v0.2
-
-- [x] SSH tunnels — shipped in v0.2
-
-- [ ] Column reordering & resize
-
-- [ ] `EXPLAIN` / query plan viewer
-
+- [x] Duplicate / delete rows · sort · show/hide columns
+- [x] SSH tunnels · SSL/TLS
+- [x] `EXPLAIN` · multi-statement · transactions · server monitor
+- [x] Native SQL export + matching `pg_dump` auto-detect/install
+- [ ] Visual query-plan viewer
+- [ ] Browse functions / triggers / sequences
+- [ ] Data transfer & structure sync between connections
 - [ ] SQL Server driver (`tiberius`)
-
 - [ ] NoSQL mode (Redis key browser, MongoDB document view)
+
+See the [TablePlus / Navicat parity milestone](https://github.com/umarta/kueri/milestone/2) for the full backlog.
 
 ## Contributing
 
-Contributions are welcome! Please read `CONTRIBUTING.md` — bug reports and feature requests via [issues](https://github.com/umarta/kueri/issues), code via pull requests.
+Contributions are welcome! Bug reports and feature requests via [issues](https://github.com/umarta/kueri/issues), code via pull requests.
+
+README screenshots are generated from the built frontend with a mocked backend —
+see `scripts/capture-screenshots.mjs` (run with Playwright).
 
 ## License
 
