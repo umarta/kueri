@@ -17,9 +17,57 @@
   let busy = false;
   let result: { ok: boolean; msg: string } | null = null;
   let queryNonce = 0;
+  // When Custom (.dump) has no matching pg_dump, we surface install/download here.
+  let needClient: { major: string; detected: string[] } | null = null;
 
   $: isPg = cfg.kind === "postgres";
   $: isSqlite = cfg.kind === "sqlite";
+
+  // The server's major version (e.g. "17"), for matching pg_dump.
+  async function serverMajor(): Promise<string | null> {
+    try {
+      const res = await api.executeQuery(
+        cfg.id,
+        "SELECT current_setting('server_version_num')",
+        `ver-${queryNonce++}`,
+      );
+      const n = Number(res.rows?.[0]?.[0]);
+      if (Number.isFinite(n) && n > 0) return String(Math.floor(n / 10000));
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  // Find a pg_dump matching the server (TablePlus-style). Returns the bin dir to
+  // pass to pg_export, or null when a matching client must be installed first.
+  async function resolveCustomTools(): Promise<string | null> {
+    if ($settings.toolsPath) return $settings.toolsPath; // manual override wins
+    busy = true;
+    const major = await serverMajor();
+    const detected = await api.detectClients();
+    busy = false;
+    const match = major ? detected.find((c) => c.major === major) : null;
+    if (match) return match.bin;
+    needClient = { major: major ?? "?", detected: detected.map((c) => c.full) };
+    return null;
+  }
+
+  async function installClient() {
+    if (!needClient) return;
+    busy = true;
+    result = null;
+    try {
+      const bin = await api.installPgClient(needClient.major);
+      settings.update((s) => ({ ...s, toolsPath: bin })); // remember the matched client
+      needClient = null;
+      busy = false;
+      run(); // retry the export now that we have a matching pg_dump
+    } catch (e) {
+      result = { ok: false, msg: (e as { message?: string })?.message ?? String(e) };
+      busy = false;
+    }
+  }
 
   // Generate the dump ourselves over the connection — version-independent, so it
   // never hits the "client older than server" pg_dump error.
@@ -55,6 +103,14 @@
 
   async function run() {
     result = null;
+    needClient = null;
+    // Custom (.dump) needs a pg_dump matching the server — resolve it first.
+    let customTools = "";
+    if (format === "custom") {
+      const tools = await resolveCustomTools();
+      if (tools === null) return; // showing the install/download panel
+      customTools = tools;
+    }
     const ext = format === "copy" ? "sqlite" : format === "custom" ? "dump" : "sql";
     const filterName = format === "copy" ? "SQLite database" : format === "custom" ? "Postgres dump" : "SQL";
     const path = await save({
@@ -68,7 +124,7 @@
         await api.writeTextFile(path, await nativeExport());
         result = { ok: true, msg: `Exported SQL.\nSaved to ${path}` };
       } else {
-        const msg = await api.pgExport(cfg, path, format, contents, $settings.toolsPath);
+        const msg = await api.pgExport(cfg, path, format, contents, customTools);
         result = { ok: true, msg: `${msg}\nSaved to ${path}` };
       }
     } catch (e) {
@@ -115,6 +171,19 @@
         {#if format === "plain"}Generated in-app over the connection — no external tools, no version mismatch.{:else if format === "custom"}Runs <code>pg_dump -Fc</code> (needs PostgreSQL client tools matching the server).{:else}Copies the SQLite database file.{/if}
       </p>
 
+      {#if needClient}
+        <div class="need">
+          <p class="need-title">No PostgreSQL {needClient.major} client tools found{#if needClient.detected.length}, only {needClient.detected.join(", ")}{/if}.</p>
+          <p class="need-sub">The Custom (.dump) format needs a <code>pg_dump</code> matching the server. (Plain SQL needs nothing.)</p>
+          <div class="need-actions">
+            <button class="btn primary" on:click={installClient} disabled={busy}>
+              {busy ? "Installing…" : `Install PostgreSQL ${needClient.major} (Homebrew)`}
+            </button>
+            <button class="btn ghost" on:click={() => api.openUrl("https://www.postgresql.org/download/")}>Download manually</button>
+          </div>
+        </div>
+      {/if}
+
       {#if result}
         <pre class="result" class:err={!result.ok}>{result.msg}</pre>
       {/if}
@@ -143,6 +212,12 @@
   .seg button { height: 30px; padding: 0 var(--s-4); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; color: var(--ink-soft); background: var(--bg-content); border: 1px solid var(--border); }
   .seg button:hover { border-color: var(--border-strong); }
   .seg button.active { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 14%, var(--bg-content)); }
+
+  .need { padding: var(--s-3) var(--s-4); border-radius: var(--r-sm); background: var(--bg-content); border: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--s-2); }
+  .need-title { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .need-sub { margin: 0; font-size: 12px; color: var(--muted); }
+  .need-sub code { font-family: var(--font-mono); }
+  .need-actions { display: flex; gap: var(--s-2); margin-top: var(--s-1); }
 
   .hint { margin: 0; font-size: 12px; color: var(--muted); }
   .hint code { font-family: var(--font-mono); color: var(--ink-soft); background: var(--bg-elevated); padding: 0 4px; border-radius: var(--r-xs); }

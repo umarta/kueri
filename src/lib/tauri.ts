@@ -9,6 +9,7 @@ import type {
   IndexInfo,
   ProcessInfo,
   RoleInfo,
+  ClientTool,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -74,6 +75,9 @@ export const api = {
     invoke<string>("pg_export", { cfg, path, format, contents, tools }),
   pgImport: (cfg: ConnectionConfig, path: string, tools: string) =>
     invoke<string>("pg_import", { cfg, path, tools }),
+  detectClients: () => invoke<ClientTool[]>("detect_clients"),
+  installPgClient: (major: string) => invoke<string>("install_pg_client", { major }),
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
 
   // Write a text file (CSV/JSON export; path comes from a save dialog).
   writeTextFile: (path: string, content: string) =>

@@ -1,3 +1,4 @@
+mod clients;
 mod commands;
 mod db;
 mod error;
@@ -53,6 +54,9 @@ pub fn run() {
             commands::read_text_file,
             pgtools::pg_export,
             pgtools::pg_import,
+            clients::detect_clients,
+            clients::install_pg_client,
+            clients::open_url,
             persist::load_connections,
             persist::save_connections,
             persist::secret_set,

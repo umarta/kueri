@@ -121,6 +121,13 @@ export interface RoleInfo {
   attributes: string;
 }
 
+/** An installed PostgreSQL client-tools version. */
+export interface ClientTool {
+  major: string;
+  full: string;
+  bin: string;
+}
+
 /** An index on a table. */
 export interface IndexInfo {
   name: string;
