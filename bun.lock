@@ -22,6 +22,7 @@
         "@sveltejs/vite-plugin-svelte": "^3",
         "@tauri-apps/cli": "^2",
         "@tsconfig/svelte": "^5",
+        "date-picker-svelte": "^2.17.0",
         "svelte": "^4",
         "svelte-check": "^3",
         "typescript": "^5",
@@ -234,6 +235,8 @@
     "crelt": ["crelt@1.0.6", "", {}, "sha512-VQ2MBenTq1fWZUH9DJNGti7kKv6EeAuYr3cLwxUWhIu1baTaXh4Ib5W2CqHVqib4/MqbYGJqiL3Zb8GJZr3l4g=="],
 
     "css-tree": ["css-tree@2.3.1", "", { "dependencies": { "mdn-data": "2.0.30", "source-map-js": "^1.0.1" } }, "sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw=="],
+
+    "date-picker-svelte": ["date-picker-svelte@2.17.0", "", { "peerDependencies": { "svelte": "^3.24.0 || ^4.0.0 || ^5.0.0" } }, "sha512-lv558Odoyh0+yYFvC2DAKCALMtGKv9hfGBS+CjdSi1xB0qcJm+dtaVABcLQaAJ5Bj+jizRBVRqfC1Tq2Gcpsog=="],
 
     "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" } }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
