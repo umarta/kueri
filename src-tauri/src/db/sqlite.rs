@@ -1,17 +1,23 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use async_trait::async_trait;
 use serde_json::Value;
+use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
-use sqlx::{Column, Executor, Row, ValueRef};
+use sqlx::{Column, Executor, Row, Sqlite, ValueRef};
+use tokio::sync::Mutex;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
     ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
 };
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 pub struct SqliteDriver {
     pool: SqlitePool,
+    txn: Mutex<Option<PoolConnection<Sqlite>>>,
+    in_txn: AtomicBool,
 }
 
 impl SqliteDriver {
@@ -20,7 +26,11 @@ impl SqliteDriver {
             .max_connections(3)
             .connect(&cfg.sqlite_url())
             .await?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            txn: Mutex::new(None),
+            in_txn: AtomicBool::new(false),
+        })
     }
 }
 
@@ -151,9 +161,31 @@ impl Driver for SqliteDriver {
     }
 
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
-        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
+        let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
+            let mut guard = self.txn.lock().await;
+            match guard.as_mut() {
+                Some(conn) => {
+                    let rows = sqlx::query(sql).fetch_all(&mut **conn).await?;
+                    let cols = if rows.is_empty() {
+                        (&mut **conn)
+                            .describe(sql)
+                            .await
+                            .map(|d| d.columns().iter().map(|c| c.name().to_string()).collect())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    (rows, cols)
+                }
+                None => (sqlx::query(sql).fetch_all(&self.pool).await?, Vec::new()),
+            }
+        } else {
+            (sqlx::query(sql).fetch_all(&self.pool).await?, Vec::new())
+        };
         let columns: Vec<String> = if let Some(r) = rows.first() {
             r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else if !empty_cols.is_empty() {
+            empty_cols
         } else {
             match (&self.pool).describe(sql).await {
                 Ok(d) => d.columns().iter().map(|c| c.name().to_string()).collect(),
@@ -174,6 +206,34 @@ impl Driver for SqliteDriver {
             rows: out,
             row_count,
         })
+    }
+
+    async fn begin(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if g.is_some() {
+            return Err(AppError::Other("Already in a transaction.".into()));
+        }
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("BEGIN").execute(&mut *conn).await?;
+        *g = Some(conn);
+        self.in_txn.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+    async fn commit(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if let Some(mut conn) = g.take() {
+            sqlx::query("COMMIT").execute(&mut *conn).await?;
+        }
+        self.in_txn.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+    async fn rollback(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if let Some(mut conn) = g.take() {
+            sqlx::query("ROLLBACK").execute(&mut *conn).await?;
+        }
+        self.in_txn.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     async fn close(&self) {

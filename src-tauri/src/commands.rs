@@ -192,6 +192,21 @@ pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
 }
 
 #[tauri::command]
+pub async fn begin_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.get(&id)?.begin().await
+}
+
+#[tauri::command]
+pub async fn commit_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.get(&id)?.commit().await
+}
+
+#[tauri::command]
+pub async fn rollback_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.get(&id)?.rollback().await
+}
+
+#[tauri::command]
 pub async fn list_processes(state: State<'_, AppState>, id: String) -> AppResult<Vec<ProcessInfo>> {
     state.get(&id)?.list_processes().await
 }

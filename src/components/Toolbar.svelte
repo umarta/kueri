@@ -7,6 +7,8 @@
   export let logOpen = false;
   export let detailOpen = false;
   export let readOnly = false;
+  export let inTxn = false;
+  export let txnBusy = false;
 
   const dispatch = createEventDispatcher<{
     disconnect: void;
@@ -15,6 +17,9 @@
     toggleLog: void;
     toggleDetail: void;
     toggleReadOnly: void;
+    begin: void;
+    commit: void;
+    rollback: void;
   }>();
 
   $: conn = $activeConnection;
@@ -51,6 +56,16 @@
   </div>
 
   <div class="right">
+    {#if conn}
+      {#if inTxn}
+        <span class="txn-badge" title="A transaction is open — changes are uncommitted">TXN</span>
+        <button class="ttext commit" disabled={txnBusy} on:click={() => dispatch("commit")} title="Commit the transaction">Commit</button>
+        <button class="ttext rollback" disabled={txnBusy} on:click={() => dispatch("rollback")} title="Roll back the transaction">Rollback</button>
+      {:else}
+        <button class="ttext" disabled={txnBusy} on:click={() => dispatch("begin")} title="Begin a transaction (manual commit)">Begin</button>
+      {/if}
+      <span class="divider"></span>
+    {/if}
     <button
       class="tbtn lock"
       class:locked={readOnly}
@@ -123,6 +138,15 @@
   .tbtn.active { background: var(--bg-active, var(--bg-elevated)); color: var(--accent); }
   .tbtn.lock.locked { color: var(--warn); }
   .divider { width: 1px; height: 18px; background: var(--border); margin: 0 var(--s-1); align-self: center; }
+
+  .ttext { height: 24px; padding: 0 var(--s-3); border-radius: var(--r-sm); font-size: 11.5px; font-weight: 600; color: var(--ink-soft); }
+  .ttext:hover:not(:disabled) { background: var(--bg-elevated); color: var(--ink); }
+  .ttext:disabled { opacity: 0.5; }
+  .ttext.commit { color: var(--ok, #18a558); }
+  .ttext.commit:hover:not(:disabled) { background: color-mix(in srgb, var(--ok, #18a558) 14%, transparent); }
+  .ttext.rollback { color: var(--danger); }
+  .ttext.rollback:hover:not(:disabled) { background: var(--danger-soft); }
+  .txn-badge { align-self: center; padding: 1px var(--s-2); border-radius: var(--r-xs); background: var(--warn); color: #1a1206; font-size: 9.5px; font-weight: 800; letter-spacing: 0.05em; }
 
   .center { display: flex; justify-content: center; }
   .ident {

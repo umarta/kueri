@@ -38,6 +38,9 @@ export const api = {
   executeQuery: (id: string, sql: string, queryId: string) =>
     invoke<QueryResult>("execute_query", { id, sql, queryId }),
   cancelQuery: (queryId: string) => invoke<void>("cancel_query", { queryId }),
+  beginTxn: (id: string) => invoke<void>("begin_txn", { id }),
+  commitTxn: (id: string) => invoke<void>("commit_txn", { id }),
+  rollbackTxn: (id: string) => invoke<void>("rollback_txn", { id }),
   listProcesses: (id: string) => invoke<ProcessInfo[]>("list_processes", { id }),
   killProcess: (id: string, pid: string) => invoke<void>("kill_process", { id, pid }),
   listRoles: (id: string) => invoke<RoleInfo[]>("list_roles", { id }),
