@@ -76,28 +76,39 @@ Grab the installer for your platform from the [**latest release**](https://githu
 
 ### Linux
 
-**AppImage** (portable, works on most distros):
-
-```bash
-chmod +x Kueri_<version>_amd64.AppImage
-./Kueri_<version>_amd64.AppImage
-```
-
-**Debian / Ubuntu** (`.deb`):
+**Debian / Ubuntu (`.deb`) — recommended.** The package declares its runtime
+dependencies, so `apt` installs WebKitGTK and friends for you:
 
 ```bash
 sudo apt install ./Kueri_<version>_amd64.deb
 kueri
 ```
 
-**Fedora / RHEL** (`.rpm`):
+**Fedora / RHEL** (`.rpm`) — same, `dnf` resolves the deps:
 
 ```bash
 sudo dnf install ./Kueri-<version>-1.x86_64.rpm
 kueri
 ```
 
-> Kueri uses WebKitGTK (`libwebkit2gtk-4.1`). The `.deb`/`.rpm` pull it in automatically; for the AppImage, install it first if the app won't start (e.g. `sudo apt install libwebkit2gtk-4.1-0`).
+**AppImage** (portable). It does **not** resolve dependencies, so install the
+runtime WebKitGTK once if the window is blank or it won't start:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-0          # runtime lib (note: NOT the -dev package)
+chmod +x Kueri_<version>_amd64.AppImage
+./Kueri_<version>_amd64.AppImage
+```
+
+> **Runtime vs build deps.** Running Kueri needs only the runtime lib
+> `libwebkit2gtk-4.1-0` (the `.deb`/`.rpm` pull it in automatically). The longer
+> `…-dev` list (`libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`,
+> `libayatana-appindicator3-dev`, `librsvg2-dev`, …) is only needed to **build
+> from source**, not to run a release.
+>
+> **Blank window / WebKitWebProcess crash?** Usually WebKitGTK's DMABUF renderer
+> on certain GPU drivers. Kueri sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself, but
+> if you still hit it, also try `WEBKIT_DISABLE_COMPOSITING_MODE=1 kueri`.
 
 ## Getting started
 
