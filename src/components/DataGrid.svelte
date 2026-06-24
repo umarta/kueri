@@ -2,7 +2,7 @@
   import { createEventDispatcher, tick } from "svelte";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { DateInput } from "date-picker-svelte";
-  import { isDateTime, toDateValue, toDateString } from "../lib/datetime";
+  import { isDate, isDateTime, toDateValue, toDateString, toDateOnlyString } from "../lib/datetime";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -434,7 +434,16 @@
                   on:keydown={(e) => { if (editable && (e.key === "Enter" || e.key === "F2")) { e.preventDefault(); startEdit(i, j, cell); } }}
                 >
                   {#if editing?.r === i && editing?.c === j}
-                    {#if isDateTime(typeMap.get(v.name) ?? "")}
+                    {#if isDate(typeMap.get(v.name) ?? "")}
+                      <DateInput
+                        class="cell-input"
+                        value={toDateValue(draft)}
+                        format="yyyy-MM-dd"
+                        closeOnSelection
+                        dynamicPositioning
+                        on:select={(ev) => { draft = toDateOnlyString(ev.detail) ?? ""; commitCell(); refocusGrid(); }}
+                      />
+                    {:else if isDateTime(typeMap.get(v.name) ?? "")}
                       <DateInput
                         class="cell-input"
                         value={toDateValue(draft)}
