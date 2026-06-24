@@ -1,7 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { DateInput } from "date-picker-svelte";
-  import { isDate, isDateTime, toDateValue, toDateString, toDateOnlyString } from "../lib/datetime";
+  import {
+    isDate, isDateTime, isDateTimeTz, toDateValue, toDateString, toDateOnlyString,
+    splitTz, combineTz, TZ_OFFSETS,
+  } from "../lib/datetime";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -183,6 +186,28 @@
                   on:select={(ev) => setVal(e, toDateOnlyString(ev.detail))}
                 />
                 <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isDateTimeTz(e.type)}
+                {@const tz = splitTz(e.col in edits ? edits[e.col] : insert ? "" : fmt(row?.[e.i]))}
+                <div class="rd-tzrow">
+                  <DateInput
+                    class="rd-input"
+                    value={tz.wall ? toDateValue(tz.wall) : insert && !provided(e) ? new Date() : null}
+                    format="yyyy-MM-dd HH:mm:ss"
+                    timePrecision="second"
+                    dynamicPositioning
+                    placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : "2020-12-31 23:59:59"}
+                    on:select={(ev) => setVal(e, combineTz(toDateString(ev.detail) ?? "", tz.offset))}
+                  />
+                  <select
+                    class="rd-input rd-select rd-tzsel"
+                    aria-label="Time zone offset"
+                    value={tz.offset}
+                    on:change={(ev) => setVal(e, combineTz(tz.wall || (toDateString(new Date()) ?? ""), ev.currentTarget.value))}
+                  >
+                    {#each TZ_OFFSETS as o (o)}<option value={o}>UTC{o}</option>{/each}
+                  </select>
+                </div>
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDateTime(e.type)}
                 <DateInput
                   class="rd-input"
@@ -315,6 +340,11 @@
   }
   .rd-menu-btn.top { top: 5px; transform: none; }
   .rd-menu-btn:hover { color: var(--ink); background: var(--bg-elevated); }
+
+  /* timestamp-with-time-zone: picker + UTC-offset selector */
+  .rd-tzrow { display: flex; gap: var(--s-2); align-items: center; padding-right: 22px; }
+  .rd-tzrow :global(.date-time-field) { flex: 1; min-width: 0; }
+  .rd-tzsel { flex: none; width: 104px; height: 30px; }
 
   .menu-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
   .rd-menu {

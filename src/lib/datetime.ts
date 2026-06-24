@@ -11,6 +11,46 @@ export const isDateTime = (t: string) => /datetime|timestamp/i.test(t);
 /** Plain date columns (no time component). */
 export const isDate = (t: string) => /^date$/i.test(t.trim());
 
+/** Tz-aware datetime columns (Postgres `timestamp with time zone`). */
+export const isDateTimeTz = (t: string) =>
+  /datetime|timestamp/i.test(t) && /with time zone/i.test(t);
+
+/** Common UTC offsets for the timezone selector. */
+export const TZ_OFFSETS = [
+  "+14:00", "+13:00", "+12:00", "+11:00", "+10:00", "+09:30", "+09:00", "+08:00",
+  "+07:00", "+06:30", "+06:00", "+05:45", "+05:30", "+05:00", "+04:30", "+04:00",
+  "+03:30", "+03:00", "+02:00", "+01:00", "+00:00", "-01:00", "-02:00", "-03:00",
+  "-03:30", "-04:00", "-05:00", "-06:00", "-07:00", "-08:00", "-09:00", "-10:00",
+  "-11:00", "-12:00",
+];
+
+/** This machine's current UTC offset, e.g. "+07:00". */
+export function localOffset(): string {
+  const m = -new Date().getTimezoneOffset();
+  const sign = m >= 0 ? "+" : "-";
+  return `${sign}${pad2(Math.floor(Math.abs(m) / 60))}:${pad2(Math.abs(m) % 60)}`;
+}
+
+const normOffset = (o: string) =>
+  o === "Z" ? "+00:00" : /^[+-]\d{4}$/.test(o) ? `${o.slice(0, 3)}:${o.slice(3)}` : o;
+
+/** Split a stored tz timestamp into its wall-clock + offset (WYSIWYG editing). */
+export function splitTz(value: string | null): { wall: string; offset: string } {
+  if (!value) return { wall: "", offset: localOffset() };
+  let s = value.trim();
+  let offset = localOffset();
+  const m = s.match(/(Z|[+-]\d{2}:?\d{2})$/);
+  if (m) {
+    offset = normOffset(m[1]);
+    s = s.slice(0, m.index);
+  }
+  s = s.replace("T", " ").replace(/\.\d+$/, "").trim();
+  return { wall: s, offset };
+}
+
+/** Recombine a wall-clock + offset into a tz literal the DB accepts. */
+export const combineTz = (wall: string, offset: string) => (wall ? `${wall}${offset}` : "");
+
 /** Parse a DB date/datetime string into a Date (null when empty/unparseable). */
 export function toDateValue(value: string | null): Date | null {
   if (!value) return null;
