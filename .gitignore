@@ -4,3 +4,7 @@ dist
 src-tauri/target
 *.log
 src-tauri/gen
+
+# use npm (package-lock.json); bun.lock confuses tauri-action CI
+bun.lock
+bun.lockb
