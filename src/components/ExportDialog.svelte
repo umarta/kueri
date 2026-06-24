@@ -191,6 +191,7 @@
     </div>
 
     <footer class="foot">
+      <button class="btn ghost" on:click={() => dispatch("close")}>{result?.ok ? "Done" : "Cancel"}</button>
       <button class="btn primary" on:click={run} disabled={busy}>
         {busy ? "Exporting…" : "Choose file & export"}
       </button>

@@ -45,7 +45,11 @@
 
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
-  const isDateTime = (t: string) => /datetime|timestamp|timestamptz/i.test(t);
+  // Tz-aware types (Postgres `timestamp with time zone`) are excluded: the picker
+  // round-trips through local Date components, which would silently shift the
+  // stored instant. They stay as text. Covers MySQL datetime/timestamp + pg
+  // `timestamp without time zone`.
+  const isDateTime = (t: string) => /datetime|timestamp/i.test(t) && !/with time zone/i.test(t);
   const isInteger = (t: string) => /\b(int|integer|smallint|bigint|tinyint|mediumint|serial|oid)\b/i.test(t);
   const isNumeric = (t: string) => /\b(decimal|numeric|float|double|real|money)\b/i.test(t);
   const isNull = (v: unknown) => v === null || v === undefined;
@@ -188,6 +192,7 @@
                   value={nulled(e) ? "" : jsonDisplay(e)}
                   on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 ></textarea>
+                <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDateTime(e.type)}
                 <DateInput
                   class="rd-input"
@@ -277,8 +282,9 @@
 {/if}
 
 <style>
-  :root {
-	--date-input-width: 100%;
+  /* date-picker-svelte renders outside this component's scope; size it globally. */
+  :global(:root) {
+    --date-input-width: 100%;
   }
   .detail { display: flex; flex-direction: column; background: var(--bg-panel); border-left: 1px solid var(--border); min-width: 0; flex: 1; overflow: hidden; }
 

@@ -27,7 +27,9 @@
       </button>
     {/each}
   </div>
-  <!-- Rely on modal's close (X) button; footer Cancel removed -->
+  <svelte:fragment slot="footer">
+    <button class="btn" on:click={() => dispatch("close")}>Cancel</button>
+  </svelte:fragment>
 </Modal>
 
 <style>
