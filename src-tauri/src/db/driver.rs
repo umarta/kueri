@@ -90,6 +90,19 @@ pub trait Driver: Send + Sync {
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult>;
     async fn close(&self);
 
+    // ── Manual transactions (pin one connection for BEGIN…COMMIT/ROLLBACK) ───────
+    async fn begin(&self) -> AppResult<()> {
+        Err(AppError::Other(
+            "Transactions aren't supported for this database.".into(),
+        ))
+    }
+    async fn commit(&self) -> AppResult<()> {
+        Err(AppError::Other("Not in a transaction.".into()))
+    }
+    async fn rollback(&self) -> AppResult<()> {
+        Err(AppError::Other("Not in a transaction.".into()))
+    }
+
     /// Foreign keys declared on a table. Default empty (engines without FK
     /// metadata); the relational drivers override it.
     async fn list_foreign_keys(&self, _schema: &str, _table: &str) -> AppResult<Vec<ForeignKey>> {

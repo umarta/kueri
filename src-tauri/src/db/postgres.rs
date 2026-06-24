@@ -1,7 +1,11 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use async_trait::async_trait;
 use serde_json::Value;
+use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
+use sqlx::{Column, Executor, Postgres, Row, TypeInfo, ValueRef};
+use tokio::sync::Mutex;
 
 use crate::db::connect::ConnectionConfig;
 use crate::db::ddl::Dialect;
@@ -13,6 +17,9 @@ use crate::error::{AppError, AppResult};
 
 pub struct PgDriver {
     pool: PgPool,
+    /// The pinned connection for an open manual transaction.
+    txn: Mutex<Option<PoolConnection<Postgres>>>,
+    in_txn: AtomicBool,
 }
 
 impl PgDriver {
@@ -22,7 +29,11 @@ impl PgDriver {
             .connect(&cfg.pg_url())
             .await?;
         sqlx::query("SELECT 1").execute(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            txn: Mutex::new(None),
+            in_txn: AtomicBool::new(false),
+        })
     }
 }
 
@@ -254,9 +265,32 @@ impl Driver for PgDriver {
     }
 
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
-        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
+        // In a manual transaction, run on the pinned connection; else on the pool.
+        let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
+            let mut guard = self.txn.lock().await;
+            match guard.as_mut() {
+                Some(conn) => {
+                    let rows = sqlx::query(sql).fetch_all(&mut **conn).await?;
+                    let cols = if rows.is_empty() {
+                        (&mut **conn)
+                            .describe(sql)
+                            .await
+                            .map(|d| d.columns().iter().map(|c| c.name().to_string()).collect())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    (rows, cols)
+                }
+                None => (sqlx::query(sql).fetch_all(&self.pool).await?, Vec::new()),
+            }
+        } else {
+            (sqlx::query(sql).fetch_all(&self.pool).await?, Vec::new())
+        };
         let columns: Vec<String> = if let Some(r) = rows.first() {
             r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else if !empty_cols.is_empty() {
+            empty_cols
         } else {
             // Empty result: pull column names from the prepared statement so the
             // grid still shows headers and the filter bar keeps its column list.
@@ -279,6 +313,34 @@ impl Driver for PgDriver {
             rows: out,
             row_count,
         })
+    }
+
+    async fn begin(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if g.is_some() {
+            return Err(AppError::Other("Already in a transaction.".into()));
+        }
+        let mut conn = self.pool.acquire().await?;
+        sqlx::query("BEGIN").execute(&mut *conn).await?;
+        *g = Some(conn);
+        self.in_txn.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+    async fn commit(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if let Some(mut conn) = g.take() {
+            sqlx::query("COMMIT").execute(&mut *conn).await?;
+        }
+        self.in_txn.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+    async fn rollback(&self) -> AppResult<()> {
+        let mut g = self.txn.lock().await;
+        if let Some(mut conn) = g.take() {
+            sqlx::query("ROLLBACK").execute(&mut *conn).await?;
+        }
+        self.in_txn.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     async fn close(&self) {

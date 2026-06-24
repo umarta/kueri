@@ -23,6 +23,7 @@
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
     readOnly, isReadStatement, shouldStartReadOnly, resolvePassword,
+    inTransaction, setInTransaction,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
   import { logSql } from "./lib/stores/log";
@@ -175,6 +176,54 @@
   }
   function openHistoryQuery(sql: string) {
     loadIntoEditor(sql);
+  }
+
+  // ── Manual transactions ───────────────────────────────────────────────────────
+  let txnBusy = false;
+  $: activeInTxn = $activeConnectionId ? $inTransaction.has($activeConnectionId) : false;
+  function txnErr(e: unknown) {
+    return (e as { message?: string })?.message ?? String(e);
+  }
+  async function beginTransaction() {
+    if (!$activeConnectionId) return;
+    txnBusy = true;
+    try {
+      await api.beginTxn($activeConnectionId);
+      setInTransaction($activeConnectionId, true);
+      showToast(true, "Transaction started — changes stay uncommitted until you commit.");
+    } catch (e) {
+      showToast(false, txnErr(e));
+    } finally {
+      txnBusy = false;
+    }
+  }
+  async function commitTransaction() {
+    if (!$activeConnectionId) return;
+    txnBusy = true;
+    try {
+      await api.commitTxn($activeConnectionId);
+      setInTransaction($activeConnectionId, false);
+      showToast(true, "Transaction committed.");
+      refresh();
+    } catch (e) {
+      showToast(false, txnErr(e));
+    } finally {
+      txnBusy = false;
+    }
+  }
+  async function rollbackTransaction() {
+    if (!$activeConnectionId) return;
+    txnBusy = true;
+    try {
+      await api.rollbackTxn($activeConnectionId);
+      setInTransaction($activeConnectionId, false);
+      showToast(true, "Transaction rolled back.");
+      refresh();
+    } catch (e) {
+      showToast(false, txnErr(e));
+    } finally {
+      txnBusy = false;
+    }
   }
   function runInNewTab(sql: string) {
     const t = blankQueryTab();
@@ -871,6 +920,7 @@
 
   function closeWorkspace(id: string) {
     api.disconnect(id).catch(() => {});
+    setInTransaction(id, false);
     delete stash[id];
     const remaining = $workspaces.filter((w) => w.id !== id);
     workspaces.set(remaining);
@@ -1051,12 +1101,17 @@
       {logOpen}
       {detailOpen}
       readOnly={$readOnly}
+      inTxn={activeInTxn}
+      {txnBusy}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
       on:toggleReadOnly={() => readOnly.update((v) => !v)}
+      on:begin={beginTransaction}
+      on:commit={commitTransaction}
+      on:rollback={rollbackTransaction}
     />
     <div class="body" class:collapsed={!sidebarOpen}>
       {#if sidebarOpen}

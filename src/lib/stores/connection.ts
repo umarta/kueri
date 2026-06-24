@@ -53,6 +53,19 @@ export function catalogColumns(table: string, columns: string[]) {
   schemaCatalog.update((cat) => ({ ...cat, [table]: columns }));
 }
 
+// ── Manual transactions ───────────────────────────────────────────────────────
+// Connection ids that currently have an open BEGIN…COMMIT/ROLLBACK transaction.
+export const inTransaction = writable<Set<string>>(new Set());
+
+export function setInTransaction(id: string, on: boolean) {
+  inTransaction.update((s) => {
+    const next = new Set(s);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  });
+}
+
 // ── Saved connections ─────────────────────────────────────────────────────────
 //
 // Connections (without passwords) persist to a JSON file in the app config dir
