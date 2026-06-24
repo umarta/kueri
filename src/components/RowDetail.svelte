@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { DateInput } from "date-picker-svelte";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -25,7 +26,11 @@
 
   // Reset when the target changes (row selection, or entering/leaving insert mode).
   $: rowKey = insert ? `insert:${insertNonce}` : `${result?.columns.length ?? 0}:${index}`;
-  $: if (rowKey !== key) { key = rowKey; edits = insert && initial ? { ...initial } : {}; menu = null; }
+  $: if (rowKey !== key) {
+    key = rowKey;
+    edits = insert && initial ? { ...initial } : {};
+    menu = null;
+  }
 
   $: row = result && index !== null ? result.rows[index] : null;
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
@@ -40,6 +45,13 @@
 
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
+  // Tz-aware types (Postgres `timestamp with time zone`) are excluded: the picker
+  // round-trips through local Date components, which would silently shift the
+  // stored instant. They stay as text. Covers MySQL datetime/timestamp + pg
+  // `timestamp without time zone`.
+  const isDateTime = (t: string) => /datetime|timestamp/i.test(t) && !/with time zone/i.test(t);
+  const isInteger = (t: string) => /\b(int|integer|smallint|bigint|tinyint|mediumint|serial|oid)\b/i.test(t);
+  const isNumeric = (t: string) => /\b(decimal|numeric|float|double|real|money)\b/i.test(t);
   const isNull = (v: unknown) => v === null || v === undefined;
   function fmt(v: unknown): string {
     if (v === null || v === undefined) return "";
@@ -82,6 +94,22 @@
   }
   const jsonDisplay = (e: Entry) =>
     e.col in edits ? edits[e.col] ?? "" : insert ? "" : prettyJson(fmt(row?.[e.i]));
+
+  function toDateValue(value: string | null): Date | null {
+    if (!value) return null;
+    const normalized = value.replace(" ", "T");
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function pad2(value: number) {
+    return String(value).padStart(2, "0");
+  }
+
+  function toDateString(value: Date | null): string | null {
+    if (!value) return null;
+    return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())} ${pad2(value.getHours())}:${pad2(value.getMinutes())}:${pad2(value.getSeconds())}`;
+  }
 
   function openMenu(e: Entry, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
@@ -165,6 +193,43 @@
                   on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 ></textarea>
                 <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isDateTime(e.type)}
+                <DateInput
+                  class="rd-input"
+                  value={insert && !provided(e) ? new Date() : toDateValue(curStr(e))}
+                  format="yyyy-MM-dd HH:mm:ss"
+                  timePrecision="second"
+                  dynamicPositioning
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : "2020-12-31 23:59:59"}
+                  on:select={(ev) => setVal(e, toDateString(ev.detail))}
+                />
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isInteger(e.type)}
+                <input
+                  class="rd-input"
+                  type="number"
+                  inputmode="numeric"
+                  step="1"
+                  class:nullph={nulled(e)}
+                  aria-label={e.col}
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : "0"}
+                  value={nulled(e) ? "" : curStr(e)}
+                  on:input={(ev) => setVal(e, ev.currentTarget.value)}
+                />
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isNumeric(e.type)}
+                <input
+                  class="rd-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="any"
+                  class:nullph={nulled(e)}
+                  aria-label={e.col}
+                  placeholder={nulled(e) ? "NULL" : insert ? "DEFAULT" : "0.0"}
+                  value={nulled(e) ? "" : curStr(e)}
+                  on:input={(ev) => setVal(e, ev.currentTarget.value)}
+                />
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else}
                 <input
                   class="rd-input"
@@ -217,6 +282,10 @@
 {/if}
 
 <style>
+  /* date-picker-svelte renders outside this component's scope; size it globally. */
+  :global(:root) {
+    --date-input-width: 100%;
+  }
   .detail { display: flex; flex-direction: column; background: var(--bg-panel); border-left: 1px solid var(--border); min-width: 0; flex: 1; overflow: hidden; }
 
   .head { display: flex; align-items: center; justify-content: space-between; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hairline); flex: none; }

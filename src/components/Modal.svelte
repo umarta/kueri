@@ -45,7 +45,10 @@
     style="--w: {width}"
   >
     {#if title}
-      <header class="head"><h2>{title}</h2></header>
+      <header class="head">
+        <h2>{title}</h2>
+        <button class="close" on:click={close} aria-label="Close">✕</button>
+      </header>
     {/if}
     <div class="body"><slot /></div>
     {#if $$slots.footer}
@@ -80,6 +83,7 @@
   .head {
     padding: var(--s-6) var(--s-7) 0;
     text-align: center;
+    position: relative;
   }
   .head h2 {
     margin: 0;
@@ -88,6 +92,22 @@
     letter-spacing: -0.01em;
     color: var(--ink);
   }
+  .close {
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--r-sm);
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 16px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .close:hover { background: var(--bg-elevated); color: var(--ink); }
   .body {
     padding: var(--s-6) var(--s-7);
     overflow: auto;

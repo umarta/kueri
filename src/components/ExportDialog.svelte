@@ -141,6 +141,7 @@
     <header class="head">
       <span class="title">Export database</span>
       <span class="db">{cfg.database}</span>
+      <button class="x" on:click={() => dispatch("close")} aria-label="Close">✕</button>
     </header>
 
     <div class="body">
