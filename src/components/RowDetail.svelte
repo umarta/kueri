@@ -272,10 +272,6 @@
 {/if}
 
 <style>
-  /* date-picker-svelte renders outside this component's scope; size it globally. */
-  :global(:root) {
-    --date-input-width: 100%;
-  }
   .detail { display: flex; flex-direction: column; background: var(--bg-panel); border-left: 1px solid var(--border); min-width: 0; flex: 1; overflow: hidden; }
 
   .head { display: flex; align-items: center; justify-content: space-between; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hairline); flex: none; }

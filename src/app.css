@@ -188,3 +188,22 @@ select.field { appearance: none; cursor: pointer;
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
 }
+
+/* date-picker-svelte — map its theme hooks to our tokens (auto light/dark). */
+:root {
+  --date-input-width: 100%;
+  --date-picker-background: var(--bg-content);
+  --date-picker-foreground: var(--ink);
+  --date-picker-highlight-border: var(--accent);
+  --date-picker-highlight-shadow: color-mix(in srgb, var(--accent) 35%, transparent);
+  --date-picker-selected-background: var(--accent);
+  --date-picker-selected-color: var(--accent-ink);
+  --date-picker-today-border: var(--border-strong);
+}
+.date-time-field input {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-sm) !important;
+  font: inherit !important;
+  font-size: 13px !important;
+}
+.date-time-field input::placeholder { color: var(--faint); }
