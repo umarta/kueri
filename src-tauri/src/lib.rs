@@ -35,6 +35,8 @@ pub fn run() {
             commands::list_columns,
             commands::table_ddl,
             commands::view_definition,
+            commands::list_objects,
+            commands::object_definition,
             commands::foreign_keys,
             commands::list_indexes,
             commands::create_index,

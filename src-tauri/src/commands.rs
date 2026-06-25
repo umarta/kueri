@@ -93,6 +93,30 @@ pub async fn view_definition(
 }
 
 #[tauri::command]
+pub async fn list_objects(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    kind: String,
+) -> AppResult<Vec<String>> {
+    state.get(&id)?.list_objects(&schema, &kind).await
+}
+
+#[tauri::command]
+pub async fn object_definition(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    name: String,
+    kind: String,
+) -> AppResult<String> {
+    state
+        .get(&id)?
+        .object_definition(&schema, &name, &kind)
+        .await
+}
+
+#[tauri::command]
 pub async fn foreign_keys(
     state: State<'_, AppState>,
     id: String,

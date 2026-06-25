@@ -193,6 +193,40 @@
       loadError = (e as { message?: string })?.message ?? String(e);
       tables = [];
     }
+    loadObjects();
+  }
+
+  // ── Functions / triggers / sequences (#31) ────────────────────────────────────
+  let routines: string[] = [];
+  let triggers: string[] = [];
+  let sequences: string[] = [];
+  let objOpen: Record<string, boolean> = {};
+  $: objGroups = [
+    { kind: "routine", label: "Functions", items: routines, icon: "ƒ" },
+    { kind: "trigger", label: "Triggers", items: triggers, icon: "⚡" },
+    { kind: "sequence", label: "Sequences", items: sequences, icon: "№" },
+  ];
+  async function loadObjects() {
+    const id = $activeConnectionId;
+    const sc = activeSchema;
+    if (!id || !sc) {
+      routines = triggers = sequences = [];
+      return;
+    }
+    [routines, triggers, sequences] = await Promise.all([
+      api.listObjects(id, sc, "routine").catch(() => []),
+      api.listObjects(id, sc, "trigger").catch(() => []),
+      api.listObjects(id, sc, "sequence").catch(() => []),
+    ]);
+  }
+  async function openObject(name: string, kind: string) {
+    if (!$activeConnectionId) return;
+    try {
+      const def = await api.objectDefinition($activeConnectionId, activeSchema, name, kind);
+      dispatch("openQuery", def);
+    } catch (e) {
+      dispatch("openQuery", `-- ${(e as { message?: string })?.message ?? String(e)}`);
+    }
   }
 
   async function onSchemaChange() {
@@ -462,9 +496,25 @@
       {/each}
       {#if loadError}
         <p class="loaderr" title={loadError}>Couldn't load tables: {loadError}</p>
-      {:else if visibleTables.length === 0}
+      {:else if visibleTables.length === 0 && !routines.length && !triggers.length && !sequences.length}
         <p class="none">{filter ? "No matches" : "No tables"}</p>
       {/if}
+
+      {#each objGroups as g (g.kind)}
+        {#if g.items.length}
+          <button class="obj-head" on:click={() => (objOpen = { ...objOpen, [g.kind]: !objOpen[g.kind] })}>
+            <span class="obj-twirl" class:open={objOpen[g.kind]}>▸</span>
+            {g.label} <span class="obj-cnt">{g.items.length}</span>
+          </button>
+          {#if objOpen[g.kind]}
+            {#each g.items as name (name)}
+              <button class="objrow" on:click={() => openObject(name, g.kind)} title={name}>
+                <span class="oicon">{g.icon}</span><span class="tname">{name}</span>
+              </button>
+            {/each}
+          {/if}
+        {/if}
+      {/each}
     {/if}
   </nav>
 
@@ -724,6 +774,15 @@
 
   .none { margin: 0; padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--faint); }
   .group-head { padding: var(--s-2) var(--s-3) 2px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+
+  .obj-head { display: flex; align-items: center; gap: var(--s-1); width: 100%; text-align: left; margin-top: var(--s-2); padding: var(--s-1) var(--s-3); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); background: none; }
+  .obj-head:hover { color: var(--muted); }
+  .obj-twirl { display: inline-block; font-size: 8px; transition: transform var(--t-fast) var(--ease-out); }
+  .obj-twirl.open { transform: rotate(90deg); }
+  .obj-cnt { margin-left: auto; color: var(--faint); font-weight: 600; }
+  .objrow { display: flex; align-items: center; gap: var(--s-2); width: 100%; text-align: left; padding: 3px var(--s-3) 3px var(--s-5); font-size: 12.5px; color: var(--ink-soft); background: none; }
+  .objrow:hover { background: var(--bg-elevated); color: var(--ink); }
+  .oicon { width: 14px; text-align: center; color: var(--accent); font-size: 11px; flex: none; }
   .loaderr { margin: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-3); font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; }
 
   .skeleton {
