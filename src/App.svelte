@@ -1352,6 +1352,9 @@
                     result={tab.result}
                     index={tab.selectedRow}
                     columns={tab.columns}
+                    foreignKeys={tab.foreignKeys}
+                    connectionId={$activeConnectionId}
+                    kind={$activeConnection?.kind ?? "postgres"}
                     bind:edits={tab.cellEdits}
                     bind:insertEdits
                     editable={editing}
