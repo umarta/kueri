@@ -4,6 +4,7 @@
   import ConnectionForm from "./ConnectionForm.svelte";
   import { api } from "../lib/tauri";
   import { savedConnections, removeConnection, resolvePassword } from "../lib/stores/connection";
+  import { openContextMenu } from "../lib/stores/contextMenu";
   import { dbKind, statusVar } from "../lib/dbKinds";
   import type { ConnectionConfig, DbKind } from "../lib/types";
 
@@ -90,6 +91,16 @@
   function del(c: ConnectionConfig, e: MouseEvent) {
     e.stopPropagation();
     removeConnection(c.id);
+  }
+
+  function connMenu(e: MouseEvent, c: ConnectionConfig) {
+    openContextMenu(e, [
+      { label: "Connect", action: () => open(c) },
+      { label: "Edit…", action: () => (editing = { ...c }) },
+      { label: "Duplicate", action: () => (editing = { ...c, id: crypto.randomUUID(), name: `${c.name} (copy)` }) },
+      { separator: true },
+      { label: "Delete", danger: true, action: () => removeConnection(c.id) },
+    ]);
   }
 
   async function open(c: ConnectionConfig) {
@@ -196,7 +207,7 @@
           {:else}
             {@const c = row.c}
           <li>
-            <button class="conn" on:click={() => open(c)} disabled={!!connectingId}>
+            <button class="conn" on:click={() => open(c)} on:contextmenu={(e) => connMenu(e, c)} disabled={!!connectingId}>
               <span class="dot" style="--c: {statusVar(c.color)}" title={c.tag ?? ""}></span>
               <span class="cn-badge" style="--c: {dbKind(c.kind).color}">{dbKind(c.kind).abbr}</span>
               <span class="cn-text">

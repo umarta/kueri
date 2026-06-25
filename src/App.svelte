@@ -18,6 +18,7 @@
   import ImportDialog from "./components/ImportDialog.svelte";
   import SavedQueries from "./components/SavedQueries.svelte";
   import ServerMonitor from "./components/ServerMonitor.svelte";
+  import ContextMenu from "./components/ContextMenu.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
@@ -296,7 +297,7 @@
   $: tab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   // Editable when the tab resolves to a single updatable table — always true for a
   // table-browse tab, and for a query tab whose SQL is a simple `SELECT * FROM <table>`.
-  $: editing = !!tab.editableTable && !tab.running;
+  $: editing = !!tab.editableTable && !tab.running && !$readOnly;
   const sync = () => (tabs = tabs); // commit mutations of a tab back to the array
 
   function newTab() {
@@ -780,6 +781,7 @@
 
   // ── Insert row ────────────────────────────────────────────────────────────
   function beginInsert() {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) return;
     insertInitial = null;
     insertNonce += 1;
@@ -1110,6 +1112,7 @@
     <Toolbar
       {sidebarOpen}
       {logOpen}
+      {detailOpen}
       readOnly={$readOnly}
       inTxn={activeInTxn}
       {txnBusy}
@@ -1118,6 +1121,7 @@
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
+      on:toggleDetail={() => (detailOpen = !detailOpen)}
       on:toggleReadOnly={() => readOnly.update((v) => !v)}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
@@ -1298,6 +1302,8 @@
 {#if serverOpen && $activeConnectionId}
   <ServerMonitor connectionId={$activeConnectionId} on:close={() => (serverOpen = false)} />
 {/if}
+
+<ContextMenu />
 
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->

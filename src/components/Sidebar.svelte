@@ -5,6 +5,7 @@
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
   import { queryLog, clearLog, removeLog, type LogEntry } from "../lib/stores/log";
+  import { openContextMenu } from "../lib/stores/contextMenu";
   import Modal from "./Modal.svelte";
   import type { SchemaInfo, TableInfo, DbKind, ColumnInfo } from "../lib/types";
 
@@ -18,21 +19,19 @@
     runQuery: string;
   }>();
 
-  // History row context menu
-  let histCtx: { x: number; y: number; entry: LogEntry } | null = null;
+  // History row right-click menu (shared context menu).
   function openHistCtx(e: MouseEvent, entry: LogEntry) {
-    e.preventDefault();
-    histCtx = { x: Math.min(e.clientX, window.innerWidth - 200), y: e.clientY, entry };
+    openContextMenu(e, [
+      { label: "Run", action: () => dispatch("runQuery", entry.sql) },
+      { label: "Copy", action: () => navigator.clipboard.writeText(entry.sql).catch(() => {}) },
+      { label: "Insert into SQL Editor", action: () => dispatch("openQuery", entry.sql) },
+      { separator: true },
+      { label: "Add to Queries", action: () => addSaved(entry.sql.split("\n")[0].slice(0, 48), entry.sql) },
+      { separator: true },
+      { label: "Delete", danger: true, action: () => removeLog(entry.id) },
+      { label: "Clear all History", danger: true, action: () => clearLog() },
+    ]);
   }
-  function histRun() { if (histCtx) dispatch("runQuery", histCtx.entry.sql); histCtx = null; }
-  function histOpen() { if (histCtx) dispatch("openQuery", histCtx.entry.sql); histCtx = null; }
-  function histCopy() { if (histCtx) navigator.clipboard.writeText(histCtx.entry.sql).catch(() => {}); histCtx = null; }
-  function histToQueries() {
-    if (histCtx) { const sql = histCtx.entry.sql; addSaved(sql.split("\n")[0].slice(0, 48), sql); }
-    histCtx = null;
-  }
-  function histDelete() { if (histCtx) removeLog(histCtx.entry.id); histCtx = null; }
-  function histClearAll() { clearLog(); histCtx = null; }
 
   // ── Left-panel tabs (Items / Queries / History) ──────────────────────────────
   let panel: "items" | "queries" | "history" = "items";
@@ -258,6 +257,23 @@
     }
   }
 
+  // ── Right-click menu on a table / view ────────────────────────────────────────
+  function tableMenu(e: MouseEvent, table: string, isView: boolean) {
+    const ro = $readOnly;
+    openContextMenu(e, [
+      { label: "Open", action: () => select(activeSchema, table) },
+      { label: "Open in New Tab", action: () => selectFull(activeSchema, table) },
+      { label: "Copy Name", action: () => navigator.clipboard.writeText(table).catch(() => {}) },
+      { separator: true },
+      { label: "Rename…", disabled: ro || isView, action: () => openRename(table) },
+      { label: "Duplicate…", disabled: ro || isView, action: () => openDup(table) },
+      { label: "Truncate…", danger: true, disabled: ro || isView, action: () => openTruncate(table) },
+      { label: isView ? "Drop View…" : "Drop Table…", danger: true, disabled: ro, action: () => openDrop(table) },
+      { separator: true },
+      { label: "Refresh", action: () => loadTables() },
+    ]);
+  }
+
   // ── Rename table ──────────────────────────────────────────────────────────────
   function openRename(table: string) {
     renameTarget = table;
@@ -400,7 +416,7 @@
           <button class="twirl" class:open={expanded.has(`${activeSchema}.${t.name}`)} on:click={(e) => toggleExpand(t.name, e)} aria-label="Expand columns">
             <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M4.5 3l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button class="table" on:click={() => select(activeSchema, t.name)} on:dblclick={() => selectFull(activeSchema, t.name)}>
+          <button class="table" on:click={() => select(activeSchema, t.name)} on:dblclick={() => selectFull(activeSchema, t.name)} on:contextmenu={(e) => tableMenu(e, t.name, isView(t.kind))}>
             {#if isView(t.kind)}
               <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
                 <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/>
@@ -499,21 +515,6 @@
     </nav>
   {/if}
 </aside>
-
-{#if histCtx}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="ctx-backdrop" on:click={() => (histCtx = null)} on:contextmenu|preventDefault={() => (histCtx = null)}></div>
-  <div class="ctx-menu" style="left: {histCtx.x}px; top: {histCtx.y}px;">
-    <button class="ctx-item" on:click={histRun}>Run</button>
-    <button class="ctx-item" on:click={histCopy}>Copy</button>
-    <button class="ctx-item" on:click={histOpen}>Insert into SQL Editor</button>
-    <div class="ctx-sep"></div>
-    <button class="ctx-item" on:click={histToQueries}>Add to Queries</button>
-    <div class="ctx-sep"></div>
-    <button class="ctx-item danger" on:click={histDelete}>Delete</button>
-    <button class="ctx-item danger" on:click={histClearAll}>Clear all History</button>
-  </div>
-{/if}
 
 <!-- New table: column designer -->
 {#if showAdd}
@@ -699,12 +700,6 @@
   .hsql { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hrow.err .hsql { color: var(--danger); }
 
-  .ctx-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown); }
-  .ctx-menu { position: fixed; z-index: var(--z-dropdown); min-width: 180px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--r-md); box-shadow: var(--shadow-pop); padding: var(--s-1); display: flex; flex-direction: column; }
-  .ctx-item { text-align: left; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 12.5px; color: var(--ink-soft); background: none; }
-  .ctx-item:hover { background: var(--accent); color: var(--accent-ink); }
-  .ctx-item.danger:hover { background: var(--danger); color: #fff; }
-  .ctx-sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--hairline); }
 
   .row { display: flex; align-items: center; border-radius: var(--r-sm); }
   .row:hover { background: var(--bg-elevated); }

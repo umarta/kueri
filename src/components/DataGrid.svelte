@@ -3,6 +3,7 @@
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { DateInput } from "date-picker-svelte";
   import { isDate, isDateTime, isDateTimeTz, toDateValue, toDateString, toDateOnlyString, combineTz, localOffset } from "../lib/datetime";
+  import { openContextMenu } from "../lib/stores/contextMenu";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
 
   export let result: QueryResult | null = null;
@@ -141,6 +142,29 @@
     const k = key(r, c);
     return k in edits ? edits[k] === null ? "NULL" : edits[k] : fmt(raw);
   };
+
+  function setNullCell(r: number, c: number) {
+    if (!result) return;
+    const k = key(r, c);
+    if (isNull(result.rows[r][c])) delete edits[k];
+    else edits[k] = null;
+    edits = edits;
+  }
+
+  function cellMenu(e: MouseEvent, r: number, c: number, vc: number, cell: unknown) {
+    active = { r, vc };
+    if (!selected.has(r)) selected = new Set([r]);
+    const rows = selected.size ? [...selected].sort((a, b) => a - b) : [r];
+    openContextMenu(e, [
+      { label: "Copy", action: () => navigator.clipboard.writeText(isNull(cell) ? "" : fmt(cell)).catch(() => {}) },
+      { label: rows.length > 1 ? `Copy ${rows.length} Rows` : "Copy Row", action: () => copySelected() },
+      { separator: true },
+      { label: "Edit Cell", disabled: !editable, action: () => result && startEdit(r, c, result.rows[r][c]) },
+      { label: "Set NULL", disabled: !editable, action: () => setNullCell(r, c) },
+      { separator: true },
+      { label: rows.length > 1 ? `Delete ${rows.length} Rows` : "Delete Row", danger: true, disabled: !editable, action: () => dispatch("deleteRows", rows) },
+    ]);
+  }
 
   async function startEdit(r: number, c: number, raw: unknown, seed?: string) {
     if (!editable) return;
@@ -433,6 +457,7 @@
                   title={display(i, j, cell)}
                   on:click={() => (active = { r: i, vc })}
                   on:dblclick={() => startEdit(i, j, cell)}
+                  on:contextmenu={(e) => cellMenu(e, i, j, vc, cell)}
                   on:keydown={(e) => { if (editable && (e.key === "Enter" || e.key === "F2")) { e.preventDefault(); startEdit(i, j, cell); } }}
                 >
                   {#if editing?.r === i && editing?.c === j}

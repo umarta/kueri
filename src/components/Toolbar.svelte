@@ -5,6 +5,7 @@
 
   export let sidebarOpen = true;
   export let logOpen = false;
+  export let detailOpen = false;
   export let readOnly = false;
   export let inTxn = false;
   export let txnBusy = false;
@@ -15,6 +16,7 @@
     toggleSidebar: void;
     toggleSettings: void;
     toggleLog: void;
+    toggleDetail: void;
     toggleReadOnly: void;
     begin: void;
     commit: void;
@@ -88,6 +90,18 @@
       <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
         <rect x="2" y="3" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
         <line x1="7" y1="3" x2="7" y2="15" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+    </button>
+    <button
+      class="tbtn"
+      class:active={detailOpen}
+      title="Toggle row detail panel"
+      aria-label="Toggle row detail panel"
+      on:click={() => dispatch("toggleDetail")}
+    >
+      <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
+        <rect x="2" y="3" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <line x1="11.5" y1="3" x2="11.5" y2="15" stroke="currentColor" stroke-width="1.4"/>
       </svg>
     </button>
     <button
