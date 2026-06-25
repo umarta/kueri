@@ -24,6 +24,8 @@ export const api = {
     invoke<ColumnInfo[]>("list_columns", { id, schema, table }),
   tableDdl: (id: string, schema: string, table: string) =>
     invoke<string>("table_ddl", { id, schema, table }),
+  viewDefinition: (id: string, schema: string, name: string) =>
+    invoke<string>("view_definition", { id, schema, name }),
   foreignKeys: (id: string, schema: string, table: string) =>
     invoke<ForeignKey[]>("foreign_keys", { id, schema, table }),
   listIndexes: (id: string, schema: string, table: string) =>

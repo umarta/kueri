@@ -233,6 +233,18 @@ impl Driver for MySqlDriver {
             .collect())
     }
 
+    async fn view_definition(&self, schema: &str, name: &str) -> AppResult<String> {
+        let q = format!(
+            "SHOW CREATE VIEW `{}`.`{}`",
+            schema.replace('`', "``"),
+            name.replace('`', "``")
+        );
+        // Returns (View, Create View, character_set_client, collation_connection).
+        let row: (String, String, String, String) =
+            sqlx::query_as(&q).fetch_one(&self.pool).await?;
+        Ok(format!("{};", row.1.trim_end().trim_end_matches(';')))
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
             let mut guard = self.txn.lock().await;

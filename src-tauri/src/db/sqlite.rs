@@ -160,6 +160,18 @@ impl Driver for SqliteDriver {
             .unwrap_or_default())
     }
 
+    async fn view_definition(&self, _schema: &str, name: &str) -> AppResult<String> {
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT sql FROM sqlite_master WHERE type='view' AND name = ?")
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(row
+            .0
+            .map(|s| format!("{};", s.trim_end().trim_end_matches(';')))
+            .unwrap_or_default())
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
             let mut guard = self.txn.lock().await;

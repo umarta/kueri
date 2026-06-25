@@ -10,6 +10,43 @@
   export let table = "";
   export let kind: DbKind = "postgres";
   export let connectionId: string | null = null;
+  /** The object is a view — show its (editable) definition. */
+  export let isView = false;
+
+  // ── View definition ───────────────────────────────────────────────────────────
+  let viewDef = "";
+  let defKey = "";
+  let defLoading = false;
+  let defSaving = false;
+  let defErr = "";
+  let defNonce = 0;
+  $: if (isView && connectionId && schema && table && `${schema}.${table}` !== defKey) loadViewDef();
+  async function loadViewDef() {
+    defKey = `${schema}.${table}`;
+    defLoading = true;
+    defErr = "";
+    try {
+      viewDef = await api.viewDefinition(connectionId!, schema, table);
+    } catch (e) {
+      defErr = (e as { message?: string })?.message ?? String(e);
+      viewDef = "";
+    } finally {
+      defLoading = false;
+    }
+  }
+  async function saveViewDef() {
+    if (!connectionId || !viewDef.trim() || defSaving) return;
+    defSaving = true;
+    defErr = "";
+    try {
+      await api.executeQuery(connectionId, viewDef, `viewdef-${defNonce++}`);
+      dispatch("changed");
+    } catch (e) {
+      defErr = (e as { message?: string })?.message ?? String(e);
+    } finally {
+      defSaving = false;
+    }
+  }
 
   const dispatch = createEventDispatcher<{ changed: void }>();
 
@@ -253,7 +290,7 @@
         {#each pkColumns as p (p)}<span class="pk-chip">{p}</span>{/each}
       {/if}
       <div class="hspace"></div>
-      {#if table}<button class="hbtn" class:on={ddlOpen} on:click={toggleDdl}>DDL</button>{/if}
+      {#if table && !isView}<button class="hbtn" class:on={ddlOpen} on:click={toggleDdl}>DDL</button>{/if}
       {#if canEdit}<button class="hbtn accent" on:click={startAdd} disabled={busy}>+ Column</button>{/if}
       <div class="search">
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -263,7 +300,21 @@
 
     {#if error}<div class="err">{error}</div>{/if}
 
-    {#if ddlOpen}
+    {#if isView}
+      <div class="vdef">
+        <div class="vdef-head">
+          <span>View definition</span>
+          <button class="vdef-save" on:click={saveViewDef} disabled={defSaving || defLoading || !viewDef.trim()}>
+            {defSaving ? "Saving…" : "Save"}
+          </button>
+        </div>
+        {#if defErr}<div class="err inline">{defErr}</div>{/if}
+        <textarea class="vdef-code" bind:value={viewDef} spellcheck="false" placeholder={defLoading ? "Loading…" : "CREATE OR REPLACE VIEW …"}></textarea>
+        <p class="vdef-hint">Edit and Save to run <code>CREATE OR REPLACE VIEW</code>. (Editing is reliable on PostgreSQL; on MySQL/SQLite you may need to adjust the statement.)</p>
+      </div>
+    {/if}
+
+    {#if ddlOpen && !isView}
       <div class="ddl-panel">
         <div class="ddl-head">
           <span>CREATE statement</span>
@@ -546,6 +597,16 @@
 
   .gut { width: 44px; min-width: 44px; text-align: right; color: var(--faint); background: var(--bg-panel); user-select: none; font-family: var(--font-mono); font-size: 11px; position: sticky; left: 0; }
   .cn { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+  .vdef { margin: var(--s-3) var(--s-4) 0; display: flex; flex-direction: column; gap: var(--s-2); }
+  .vdef-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .vdef-save { font-size: 11.5px; font-weight: 600; color: var(--accent); padding: var(--s-1) var(--s-3); border-radius: var(--r-sm); }
+  .vdef-save:hover:not(:disabled) { background: var(--bg-elevated); }
+  .vdef-save:disabled { opacity: 0.5; }
+  .vdef-code { width: 100%; min-height: 140px; resize: vertical; background: var(--bg-content); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--ink); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: var(--s-3); white-space: pre; }
+  .vdef-code:focus { outline: none; border-color: var(--accent); }
+  .vdef-hint { margin: 0; font-size: 11px; color: var(--faint); }
+  .vdef-hint code { font-family: var(--font-mono); }
+
   .cn-text.editable { cursor: text; }
   .cmt-text.editable { cursor: text; }
   .cmt-text.editable:hover { text-decoration: underline dotted var(--faint); }
