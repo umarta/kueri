@@ -378,10 +378,24 @@
     sync();
   }
 
+  // UPDATE / DELETE with no WHERE — easy to fire by accident, hits every row.
+  function unsafeNoWhere(sql: string): boolean {
+    const s = sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim();
+    return /^(update|delete)\b/i.test(s) && !/\bwhere\b/i.test(s);
+  }
+
   async function runSql(t: QueryTab, sql: string) {
     const stmts = splitStatements(sql);
     if (!stmts.length) return;
     if ($readOnly && stmts.some((s) => !isReadStatement(s))) { showToast(false, blockedMsg); return; }
+    const unsafe = stmts.filter(unsafeNoWhere);
+    if (unsafe.length) {
+      const ok = await ask(
+        `${unsafe.length === 1 ? "This statement has" : `${unsafe.length} statements have`} no WHERE clause and will affect every row:\n\n${unsafe.map((s) => s.trim().slice(0, 120)).join("\n")}\n\nRun anyway?`,
+        { title: "Run without WHERE?", kind: "warning" },
+      );
+      if (!ok) return;
+    }
     t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync();
     // Single statement: keep the editable single-table path.
     if (stmts.length === 1) {
@@ -678,11 +692,36 @@
         .map((row) => `INSERT INTO ${sqlTable} (${cols}) VALUES (${row.map((v) => (v === null || v === undefined ? "NULL" : lit(typeof v === "object" ? JSON.stringify(v) : v))).join(", ")});`)
         .join("\n");
     }
+    if (format === "markdown") {
+      const md = (v: unknown) =>
+        (v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)).replace(/\|/g, "\\|").replace(/\n/g, " ");
+      const header = `| ${columns.join(" | ")} |`;
+      const sep = `| ${columns.map(() => "---").join(" | ")} |`;
+      return [header, sep, ...rows.map((row) => `| ${row.map(md).join(" | ")} |`)].join("\n");
+    }
     const esc = (v: unknown) => {
       const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     return [columns.map(esc).join(","), ...rows.map((row) => row.map(esc).join(","))].join("\n");
+  }
+
+  // Copy selected rows to the clipboard in a chosen format (grid context menu).
+  async function copyRowsAs(e: CustomEvent<{ format: string; indices: number[] }>) {
+    const t = tab;
+    if (!t.result) return;
+    const { format, indices } = e.detail;
+    const cols = t.result.columns;
+    const rows = indices.map((i) => t.result!.rows[i]);
+    const sqlTable = t.editableTable
+      ? qtable(t.editableTable.schema, t.editableTable.table)
+      : qid(t.selected?.table ?? "table");
+    try {
+      await navigator.clipboard.writeText(buildExport(format, cols, rows, sqlTable));
+      showToast(true, `Copied ${rows.length} row${rows.length > 1 ? "s" : ""} as ${format === "sql" ? "SQL" : format === "markdown" ? "Markdown" : format.toUpperCase()}.`);
+    } catch {
+      showToast(false, "Clipboard unavailable.");
+    }
   }
 
   // Export the current result (whole=false) or the whole table (whole=true).
@@ -1239,6 +1278,7 @@
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; if ($settings.showSidebarRowDetail) detailOpen = true; sync(); }}
                     on:sortColumn={(e) => toggleSort(e.detail)}
                     on:deleteRows={deleteRows}
+                    on:copyAs={copyRowsAs}
                   />
                   {#if tab.kind === "table" && tab.result}
                     <div class="page-bar">
