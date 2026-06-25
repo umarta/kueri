@@ -27,7 +27,7 @@
   // Edit mode shares the staged-edit set with the grid (keyed `rowIndex:colIndex`),
   // so a change in either surface shows in both. Insert mode keeps its own map.
   export let edits: Record<string, string | null> = {};
-  let insertEdits: Record<string, string | null> = {};
+  export let insertEdits: Record<string, string | null> = {};
   let insertKey = "";
   let prevIndex: number | null = null;
   let menu: { col: string; i: number; right: number; top: number; json: boolean } | null = null;

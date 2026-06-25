@@ -11,6 +11,12 @@
   export let columns: ColumnInfo[] = [];
   /** Editing is only safe when the result is a direct single-table browse. */
   export let editable = false;
+  /** A new row is being composed in the detail panel — mirror it at the grid's foot. */
+  export let inserting = false;
+  export let insertEdits: Record<string, string | null> = {};
+
+  const newDisplay = (name: string): string =>
+    name in insertEdits ? (insertEdits[name] === null ? "NULL" : insertEdits[name] ?? "") : "DEFAULT";
   /** Currently selected row index (drives the detail panel + highlight). */
   export let selectedRow: number | null = null;
   /** Alternating row background colors (a workspace setting). */
@@ -505,8 +511,18 @@
             </div>
           {/each}
       </div>
+
+      {#if inserting}
+        <div class="newrow" role="row" style="grid-template-columns: {template}; height: {ROW_H}px" title="New row — fill it in the panel, then ⌘S to insert">
+          <div class="cell gutter newgut" aria-hidden="true">＋</div>
+          {#each visible as v (v.name)}
+            {@const val = newDisplay(v.name)}
+            <div class="cell newcell" class:dim={val === "DEFAULT" || val === "NULL"} title={val}>{val}</div>
+          {/each}
+        </div>
+      {/if}
     </div>
-    {#if result.rows.length === 0}<div class="no-rows">Query returned no rows.</div>{/if}
+    {#if result.rows.length === 0 && !inserting}<div class="no-rows">Query returned no rows.</div>{/if}
   </div>
 
   {#if colMenu}
@@ -673,6 +689,22 @@
   }
   .row:hover .cell.edited { background: rgba(255, 214, 10, 0.16); }
   .cell.active { padding: 0; box-shadow: inset 0 0 0 2px var(--accent); overflow: visible; z-index: 10; }
+
+  /* Pending new row — sticky at the foot of the grid while inserting */
+  .newrow {
+    position: sticky; bottom: 0; z-index: 6; display: grid; align-items: stretch;
+    background: color-mix(in srgb, var(--ok, #18a558) 26%, var(--bg-content));
+    border-top: 1px solid color-mix(in srgb, var(--ok, #18a558) 65%, transparent);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.22);
+  }
+  .newrow .cell {
+    display: flex; align-items: center; padding: 0 var(--s-4);
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border-right: 1px solid color-mix(in srgb, var(--ok, #18a558) 30%, transparent);
+  }
+  .newrow .cell.dim { color: color-mix(in srgb, var(--ink) 55%, transparent); font-style: italic; }
+  .newgut { justify-content: center; color: var(--ok, #18a558); font-weight: 800; }
   /* date-picker popup inside the grid: keep it above sibling rows. */
   .cell.active :global(.date-time-field) { width: 100%; }
   .cell.active :global(.picker) { z-index: var(--z-dropdown); }
