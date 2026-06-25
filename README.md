@@ -4,7 +4,7 @@
 
 **A fast, native, open-source multi-database GUI client.**
 
-The speed and minimalism of TablePlus — fully open source. One calm, keyboard-first interface for every database, powered by a single Rust `Driver` abstraction. Built with Tauri instead of Electron for a tiny footprint and native performance.
+One calm, keyboard-first interface for every database, powered by a single Rust `Driver` abstraction. Built with Tauri for a lightweight footprint, native performance, and a consistent experience across every supported database.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Latest release](https://img.shields.io/github/v/release/umarta/kueri?label=latest)
