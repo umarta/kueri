@@ -278,6 +278,80 @@ impl Driver for PgDriver {
         ))
     }
 
+    async fn list_objects(&self, schema: &str, kind: &str) -> AppResult<Vec<String>> {
+        let sql = match kind {
+            "routine" => {
+                "SELECT routine_name FROM information_schema.routines \
+                          WHERE routine_schema = $1 AND routine_type IN ('FUNCTION','PROCEDURE') \
+                          ORDER BY routine_name"
+            }
+            "trigger" => {
+                "SELECT DISTINCT trigger_name FROM information_schema.triggers \
+                          WHERE trigger_schema = $1 ORDER BY trigger_name"
+            }
+            "sequence" => {
+                "SELECT sequence_name FROM information_schema.sequences \
+                           WHERE sequence_schema = $1 ORDER BY sequence_name"
+            }
+            _ => return Ok(vec![]),
+        };
+        let rows: Vec<(String,)> = sqlx::query_as(sql)
+            .bind(schema)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
+    async fn object_definition(&self, schema: &str, name: &str, kind: &str) -> AppResult<String> {
+        match kind {
+            "routine" => {
+                let row: (String,) = sqlx::query_as(
+                    "SELECT pg_get_functiondef(p.oid) FROM pg_proc p \
+                     JOIN pg_namespace n ON n.oid = p.pronamespace \
+                     WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1",
+                )
+                .bind(schema)
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+                Ok(format!("{};", row.0.trim_end().trim_end_matches(';')))
+            }
+            "trigger" => {
+                let row: (String,) = sqlx::query_as(
+                    "SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t \
+                     JOIN pg_class c ON c.oid = t.tgrelid \
+                     JOIN pg_namespace n ON n.oid = c.relnamespace \
+                     WHERE n.nspname = $1 AND t.tgname = $2 AND NOT t.tgisinternal LIMIT 1",
+                )
+                .bind(schema)
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+                Ok(format!("{};", row.0.trim_end().trim_end_matches(';')))
+            }
+            "sequence" => {
+                let r: (Option<i64>, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
+                    "SELECT start_value, increment_by, min_value, max_value \
+                     FROM pg_sequences WHERE schemaname = $1 AND sequencename = $2",
+                )
+                .bind(schema)
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+                Ok(format!(
+                    "CREATE SEQUENCE {}.{}\n  START WITH {}\n  INCREMENT BY {}\n  MINVALUE {}\n  MAXVALUE {};",
+                    schema,
+                    name,
+                    r.0.unwrap_or(1),
+                    r.1.unwrap_or(1),
+                    r.2.map(|v| v.to_string()).unwrap_or_else(|| "NO MINVALUE".into()),
+                    r.3.map(|v| v.to_string()).unwrap_or_else(|| "NO MAXVALUE".into()),
+                ))
+            }
+            _ => Err(AppError::Other(format!("unknown object kind: {kind}"))),
+        }
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         // In a manual transaction, run on the pinned connection; else on the pool.
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {

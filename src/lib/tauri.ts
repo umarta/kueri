@@ -26,6 +26,10 @@ export const api = {
     invoke<string>("table_ddl", { id, schema, table }),
   viewDefinition: (id: string, schema: string, name: string) =>
     invoke<string>("view_definition", { id, schema, name }),
+  listObjects: (id: string, schema: string, kind: "routine" | "trigger" | "sequence") =>
+    invoke<string[]>("list_objects", { id, schema, kind }),
+  objectDefinition: (id: string, schema: string, name: string, kind: string) =>
+    invoke<string>("object_definition", { id, schema, name, kind }),
   foreignKeys: (id: string, schema: string, table: string) =>
     invoke<ForeignKey[]>("foreign_keys", { id, schema, table }),
   listIndexes: (id: string, schema: string, table: string) =>

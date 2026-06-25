@@ -173,6 +173,22 @@ pub trait Driver: Send + Sync {
         ))
     }
 
+    /// Names of schema objects of `kind`: "routine" | "trigger" | "sequence".
+    async fn list_objects(&self, _schema: &str, _kind: &str) -> AppResult<Vec<String>> {
+        Ok(vec![])
+    }
+    /// The definition / DDL of a routine / trigger / sequence.
+    async fn object_definition(
+        &self,
+        _schema: &str,
+        _name: &str,
+        _kind: &str,
+    ) -> AppResult<String> {
+        Err(AppError::Other(
+            "Object definitions aren't available for this database.".into(),
+        ))
+    }
+
     async fn create_index(
         &self,
         schema: &str,

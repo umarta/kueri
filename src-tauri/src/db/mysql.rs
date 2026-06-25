@@ -245,6 +245,69 @@ impl Driver for MySqlDriver {
         Ok(format!("{};", row.1.trim_end().trim_end_matches(';')))
     }
 
+    async fn list_objects(&self, schema: &str, kind: &str) -> AppResult<Vec<String>> {
+        let sql = match kind {
+            "routine" => {
+                "SELECT CAST(routine_name AS CHAR) FROM information_schema.routines \
+                          WHERE routine_schema = ? ORDER BY routine_name"
+            }
+            "trigger" => {
+                "SELECT CAST(trigger_name AS CHAR) FROM information_schema.triggers \
+                          WHERE trigger_schema = ? ORDER BY trigger_name"
+            }
+            _ => return Ok(vec![]), // MySQL has no sequences
+        };
+        let rows: Vec<(String,)> = sqlx::query_as(sql)
+            .bind(schema)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
+    async fn object_definition(&self, schema: &str, name: &str, kind: &str) -> AppResult<String> {
+        let obj = format!(
+            "`{}`.`{}`",
+            schema.replace('`', "``"),
+            name.replace('`', "``")
+        );
+        match kind {
+            "routine" => {
+                // Could be a function or a procedure — ask information_schema first.
+                let rt: (String,) = sqlx::query_as(
+                    "SELECT CAST(routine_type AS CHAR) FROM information_schema.routines \
+                     WHERE routine_schema = ? AND routine_name = ? LIMIT 1",
+                )
+                .bind(schema)
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+                let what = if rt.0.eq_ignore_ascii_case("PROCEDURE") {
+                    "PROCEDURE"
+                } else {
+                    "FUNCTION"
+                };
+                // SHOW CREATE {FUNCTION|PROCEDURE} → (Name, sql_mode, Create ..., ...).
+                let row: (String, String, Option<String>) =
+                    sqlx::query_as(&format!("SHOW CREATE {what} {obj}"))
+                        .fetch_one(&self.pool)
+                        .await?;
+                Ok(format!(
+                    "{};",
+                    row.2.unwrap_or_default().trim_end().trim_end_matches(';')
+                ))
+            }
+            "trigger" => {
+                // SHOW CREATE TRIGGER → (Trigger, sql_mode, SQL Original Statement, …).
+                let row: (String, String, String) =
+                    sqlx::query_as(&format!("SHOW CREATE TRIGGER {obj}"))
+                        .fetch_one(&self.pool)
+                        .await?;
+                Ok(format!("{};", row.2.trim_end().trim_end_matches(';')))
+            }
+            _ => Err(AppError::Other(format!("unknown object kind: {kind}"))),
+        }
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
             let mut guard = self.txn.lock().await;

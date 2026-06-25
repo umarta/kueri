@@ -172,6 +172,29 @@ impl Driver for SqliteDriver {
             .unwrap_or_default())
     }
 
+    async fn list_objects(&self, _schema: &str, kind: &str) -> AppResult<Vec<String>> {
+        if kind != "trigger" {
+            return Ok(vec![]); // SQLite has no routines or sequences
+        }
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
+    async fn object_definition(&self, _schema: &str, name: &str, _kind: &str) -> AppResult<String> {
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT sql FROM sqlite_master WHERE name = ? AND type='trigger'")
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(row
+            .0
+            .map(|s| format!("{};", s.trim_end().trim_end_matches(';')))
+            .unwrap_or_default())
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {
             let mut guard = self.txn.lock().await;
