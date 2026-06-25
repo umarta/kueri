@@ -48,6 +48,7 @@ pub fn run() {
             commands::list_processes,
             commands::kill_process,
             commands::list_roles,
+            commands::set_column_comment,
             commands::create_schema,
             commands::drop_schema,
             commands::create_table,

@@ -48,6 +48,23 @@ pub fn qualify(d: Dialect, schema: &str, table: &str) -> String {
     }
 }
 
+/// Set or clear a column comment (Postgres). Empty comment → removes it.
+pub fn set_column_comment(
+    d: Dialect,
+    schema: &str,
+    table: &str,
+    column: &str,
+    comment: &str,
+) -> String {
+    let target = format!("{}.{}", qualify(d, schema, table), ident(d, column));
+    let value = if comment.is_empty() {
+        "NULL".to_string()
+    } else {
+        format!("'{}'", comment.replace('\'', "''"))
+    };
+    format!("COMMENT ON COLUMN {target} IS {value};")
+}
+
 pub fn create_table(d: Dialect, schema: &str, table: &str, cols: &[ColumnDef]) -> String {
     let mut defs: Vec<String> = cols
         .iter()

@@ -45,6 +45,8 @@ export const api = {
   listProcesses: (id: string) => invoke<ProcessInfo[]>("list_processes", { id }),
   killProcess: (id: string, pid: string) => invoke<void>("kill_process", { id, pid }),
   listRoles: (id: string) => invoke<RoleInfo[]>("list_roles", { id }),
+  setColumnComment: (id: string, schema: string, table: string, column: string, comment: string) =>
+    invoke<void>("set_column_comment", { id, schema, table, column, comment }),
   createSchema: (id: string, name: string) => invoke<void>("create_schema", { id, name }),
   dropSchema: (id: string, name: string) => invoke<void>("drop_schema", { id, name }),
 
