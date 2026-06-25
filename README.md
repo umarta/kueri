@@ -50,23 +50,24 @@ Most database GUIs are heavy (Electron/Java), closed-source, or paid. Kueri stay
 
 ### Browse & edit
 
-- **Fast result grid** — virtualized for large results: **sort** by header, **paginate**, **find-in-results**, **show/hide columns** (persisted per table), multi-row **select + copy**, **delete** and **duplicate** rows.
-- **Inline & detail editing** — edit in the grid or a field-by-field **row-detail panel** with type-aware controls: boolean & enum dropdowns, JSON pretty/minify, quick `NULL`, and **date / time / timezone pickers** for temporal columns. Edits stay in sync across both surfaces.
-- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); empty fields fall back to column defaults.
+- **Fast result grid** — virtualized for large results: **multi-column sort** (Shift-click headers), **paginate**, **find-in-results**, **show/hide columns** (persisted per table), multi-row **select + copy**, **delete** and **duplicate** rows.
+- **Inline & detail editing** — edit in the grid or a field-by-field **row-detail panel** with type-aware controls: boolean & enum dropdowns, **foreign-key lookup dropdowns**, JSON pretty/minify, quick `NULL`, and **date / time / timezone pickers** for temporal columns. Edits stay in sync across both surfaces.
+- **Right-click everything** — context menus on cells/rows (copy as **CSV/JSON/Markdown/SQL**, bulk **Set NULL / Fill**, quick **Filter / Exclude**, delete), tables, connections and history.
+- **Insert rows** — a type-aware form built from the table's columns (works on empty tables too); the pending row is shown live at the foot of the grid.
 - **Filters & FK navigation** — build `WHERE` conditions without SQL; click a foreign-key cell to jump to the referenced row.
-- **Safe writes** — commits are precise primary-key-aware `UPDATE`s; big integers keep full precision.
+- **Safe writes** — commits are precise primary-key-aware `UPDATE`s; big integers keep full precision; a read-only lock disables editing entirely.
 
 ### Write SQL
 
 - **CodeMirror editor** — schema-aware autocomplete, per-tab, `⌘↵` to run, **find & replace**, and **format** (`⇧⌘F`).
-- **Multi-statement** scripts with a result-set switcher; **cancel** a long query (`⌘.`); **EXPLAIN**; **generate SQL** (SELECT/INSERT/UPDATE/CREATE) from any table.
-- **Transactions** — manual **Begin / Commit / Rollback** on a pinned connection.
+- **Multi-statement** scripts with a result-set switcher; **cancel** a long query (`⌘.`); **visual EXPLAIN** plan tree (Postgres); **generate SQL** (SELECT/INSERT/UPDATE/CREATE) from any table.
+- **Transactions** — manual **Begin / Commit / Rollback** on a pinned connection; a guard confirms a console `UPDATE`/`DELETE` with no `WHERE`.
 - **Saved queries** and a date-grouped, searchable **History** of console runs (with a right-click menu), kept separate from the **activity log** that records everything the app runs.
 
 ### Schema & structure
 
-- **Three-tab sidebar** — Items (tables/views, expandable to columns), Queries, History.
-- **Structure tab** — TablePlus-style two-pane columns + indexes grids (type / nullable / default / **foreign key** / **comment**); **manage indexes & foreign keys** and view the **CREATE / DDL**.
+- **Three-tab sidebar** — Items (tables/views expandable to columns, plus **functions / triggers / sequences**), Queries, History.
+- **Structure tab** — TablePlus-style two-pane columns + indexes grids (type / nullable / default / **foreign key** / **editable comment**); **manage indexes & foreign keys**, view the **CREATE / DDL**, and **edit a view's definition**.
 - **Object & DDL management** — create / rename / drop / truncate / duplicate tables, add / rename / drop columns, and **create / drop database & schema** — all DDL generated per dialect in the backend.
 - **Server tools** — a **Server Monitor** (running queries + kill) and a **users / roles** list.
 

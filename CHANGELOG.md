@@ -4,6 +4,26 @@ All notable changes to Kueri are documented here. This project adheres to
 [Semantic Versioning](https://semver.org) and the spirit of
 [Keep a Changelog](https://keepachangelog.com).
 
+## [0.5.0] — 2026-06-26
+
+Completes the TablePlus / Navicat parity Tier-1: a full pass over browsing,
+editing, schema objects and right-click ergonomics.
+
+### Added
+- **Right-click context menus** everywhere — one reusable pattern across the sidebar (tables/views), grid cells/rows, connections, and history. (#108)
+- **Browse functions, triggers & sequences** — collapsible groups in the Items sidebar; click to open the object's definition. (#31)
+- **Browse + edit view definitions** — a view's `CREATE` shows in the Structure tab and Save runs `CREATE OR REPLACE VIEW`. (#73)
+- **Visual EXPLAIN** — Postgres `EXPLAIN (FORMAT JSON)` rendered as a readable plan tree (node type, relation/index, cost, rows, conditions). (#69)
+- **Foreign-key lookup dropdown** — edit FK columns by picking a referenced row (key · label) instead of typing a raw key. (#72)
+- **Edit column comments inline** in the Structure tab (Postgres `COMMENT ON`). (#75)
+- **Per-column quick filter + multi-column sort** — Shift-click headers to stack sort keys; right-click a cell to *Filter / Exclude*. (#70)
+- **Copy results as CSV / JSON / Markdown / SQL**, **bulk Set NULL / Fill value** across a selection. (#74, #71)
+- **Destructive-statement guard** — confirm before a console `UPDATE`/`DELETE` with no `WHERE`. (#68)
+- **New row shown in the grid** while inserting; a **row-detail toggle** in the toolbar.
+
+### Fixed
+- The read-only lock now disables grid + row-detail editing **up front**, not just at save time.
+
 ## [0.4.0] — 2026-06-25
 
 Serious-client features and a much richer editing experience.
@@ -99,6 +119,7 @@ Initial public release.
 - Query log, command palette, native menu + keyboard shortcuts, Settings.
 - OS keychain credential storage; signed-less release builds for macOS, Windows and Linux.
 
+[0.5.0]: https://github.com/umarta/kueri/releases/tag/v0.5.0
 [0.4.0]: https://github.com/umarta/kueri/releases/tag/v0.4.0
 [0.3.0]: https://github.com/umarta/kueri/releases/tag/v0.3.0
 [0.2.0]: https://github.com/umarta/kueri/releases/tag/v0.2.0
