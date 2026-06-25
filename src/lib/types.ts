@@ -81,6 +81,8 @@ export interface QueryTab {
   running: boolean;
   view: "data" | "structure";
   selected: { schema: string; table: string } | null;
+  /** The selected object is a view (drives the Structure definition editor). */
+  isView: boolean;
   editableTable: { schema: string; table: string } | null;
   pkColumns: string[];
   columns: ColumnInfo[];

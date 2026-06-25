@@ -13,8 +13,8 @@
   export let currentSql = "";
 
   const dispatch = createEventDispatcher<{
-    selectTable: { schema: string; table: string };
-    openTableFull: { schema: string; table: string };
+    selectTable: { schema: string; table: string; isView: boolean };
+    openTableFull: { schema: string; table: string; isView: boolean };
     openQuery: string;
     runQuery: string;
   }>();
@@ -205,13 +205,13 @@
     }
   }
 
-  function select(schema: string, table: string) {
+  function select(schema: string, table: string, view = false) {
     selectedKey = `${schema}.${table}`;
-    dispatch("selectTable", { schema, table });
+    dispatch("selectTable", { schema, table, isView: view });
   }
-  function selectFull(schema: string, table: string) {
+  function selectFull(schema: string, table: string, view = false) {
     selectedKey = `${schema}.${table}`;
-    dispatch("openTableFull", { schema, table });
+    dispatch("openTableFull", { schema, table, isView: view });
   }
 
   $: visibleTables = filter
@@ -416,7 +416,7 @@
           <button class="twirl" class:open={expanded.has(`${activeSchema}.${t.name}`)} on:click={(e) => toggleExpand(t.name, e)} aria-label="Expand columns">
             <svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M4.5 3l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <button class="table" on:click={() => select(activeSchema, t.name)} on:dblclick={() => selectFull(activeSchema, t.name)} on:contextmenu={(e) => tableMenu(e, t.name, isView(t.kind))}>
+          <button class="table" on:click={() => select(activeSchema, t.name, isView(t.kind))} on:dblclick={() => selectFull(activeSchema, t.name, isView(t.kind))} on:contextmenu={(e) => tableMenu(e, t.name, isView(t.kind))}>
             {#if isView(t.kind)}
               <svg class="ticon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
                 <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/>

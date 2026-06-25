@@ -281,7 +281,7 @@
     return {
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
-      selected: null, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
+      selected: null, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -289,7 +289,7 @@
     return {
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
-      selected: { schema, table }, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
+      selected: { schema, table }, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
@@ -523,11 +523,11 @@
     sync();
   }
 
-  function onSelectTable(e: CustomEvent<{ schema: string; table: string }>) {
-    openTable(e.detail.schema, e.detail.table, false);
+  function onSelectTable(e: CustomEvent<{ schema: string; table: string; isView?: boolean }>) {
+    openTable(e.detail.schema, e.detail.table, false, !!e.detail.isView);
   }
-  function onOpenTableFull(e: CustomEvent<{ schema: string; table: string }>) {
-    openTable(e.detail.schema, e.detail.table, true);
+  function onOpenTableFull(e: CustomEvent<{ schema: string; table: string; isView?: boolean }>) {
+    openTable(e.detail.schema, e.detail.table, true, !!e.detail.isView);
   }
   // Promote a preview (italic) tab to a pinned (normal) tab.
   function pinTab(id: string) {
@@ -537,7 +537,7 @@
 
   // TablePlus-style preview tabs: a single-click reuses the active preview tab
   // (italic) in place; double-click (pin=true) opens/keeps a pinned tab.
-  function openTable(schema: string, table: string, pin: boolean) {
+  function openTable(schema: string, table: string, pin: boolean, isView = false) {
     const existing = tabs.find(
       (x) => x.kind === "table" && x.selected?.schema === schema && x.selected?.table === table,
     );
@@ -553,11 +553,13 @@
       t.sort = null;
       t.offset = 0;
       t.preview = !pin;
+      t.selected = { schema, table };
     } else {
       t = tableTab(schema, table);
       t.preview = !pin;
       tabs = [...tabs, t];
     }
+    t.isView = isView;
     activeId = t.id;
     t.selectedRow = null;
     sync();
@@ -1242,6 +1244,7 @@
               columns={tab.columns}
               schema={tab.selected?.schema ?? ""}
               table={tab.selected?.table ?? ""}
+              isView={tab.isView}
               kind={$activeConnection?.kind ?? "postgres"}
               connectionId={$activeConnectionId}
               on:changed={() => loadColumns(tab)}

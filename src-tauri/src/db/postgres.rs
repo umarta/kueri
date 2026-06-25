@@ -264,6 +264,20 @@ impl Driver for PgDriver {
             .collect())
     }
 
+    async fn view_definition(&self, schema: &str, name: &str) -> AppResult<String> {
+        let row: (String,) =
+            sqlx::query_as("SELECT pg_get_viewdef(format('%I.%I', $1, $2)::regclass, true)")
+                .bind(schema)
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?;
+        let q = crate::db::ddl::qualify(Dialect::Postgres, schema, name);
+        Ok(format!(
+            "CREATE OR REPLACE VIEW {q} AS\n{};",
+            row.0.trim_end().trim_end_matches(';')
+        ))
+    }
+
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult> {
         // In a manual transaction, run on the pinned connection; else on the pool.
         let (rows, empty_cols) = if self.in_txn.load(Ordering::Relaxed) {

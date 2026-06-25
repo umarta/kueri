@@ -165,6 +165,14 @@ pub trait Driver: Send + Sync {
         Ok(())
     }
 
+    /// The `CREATE [OR REPLACE] VIEW …` text for a view. Relational drivers
+    /// override this; the default has no way to produce it.
+    async fn view_definition(&self, _schema: &str, _name: &str) -> AppResult<String> {
+        Err(AppError::Other(
+            "Viewing the definition isn't supported for this database.".into(),
+        ))
+    }
+
     async fn create_index(
         &self,
         schema: &str,

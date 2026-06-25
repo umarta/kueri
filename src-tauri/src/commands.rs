@@ -83,6 +83,16 @@ pub async fn table_ddl(
 }
 
 #[tauri::command]
+pub async fn view_definition(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    name: String,
+) -> AppResult<String> {
+    state.get(&id)?.view_definition(&schema, &name).await
+}
+
+#[tauri::command]
 pub async fn foreign_keys(
     state: State<'_, AppState>,
     id: String,
