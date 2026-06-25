@@ -206,7 +206,7 @@
             </li>
           {:else}
             {@const c = row.c}
-          <li>
+          <li class="conn">
             <button class="conn" on:click={() => open(c)} on:contextmenu={(e) => connMenu(e, c)} disabled={!!connectingId}>
               <span class="dot" style="--c: {statusVar(c.color)}" title={c.tag ?? ""}></span>
               <span class="cn-badge" style="--c: {dbKind(c.kind).color}">{dbKind(c.kind).abbr}</span>
@@ -217,19 +217,22 @@
                 </span>
                 <span class="cn-sub">{subtitle(c)}</span>
               </span>
-              {#if connectingId === c.id}
-                <span class="spin" aria-label="Connecting"></span>
-              {:else}
-                <span class="cn-actions">
-                  <button class="icon" title="Edit" on:click={(e) => edit(c, e)} aria-label="Edit">
-                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M11.5 2.5l2 2-7.5 7.5-2.6.6.6-2.6 7.5-7.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-                  </button>
-                  <button class="icon danger" title="Delete" on:click={(e) => del(c, e)} aria-label="Delete">
-                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 4.5h10M6.5 4V3h3v1M5 4.5l.6 8h4.8l.6-8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>
-                </span>
-              {/if}
+			  {#if connectingId === c.id}
+				<span class="spin" aria-label="Connecting"></span>
+			  {/if}
             </button>
+			<span class="cn-actions">
+				<button class="icon" title="Edit" on:click={(e) => edit(c, e)} aria-label="Edit">
+					<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+						<path d="M11.5 2.5l2 2-7.5 7.5-2.6.6.6-2.6 7.5-7.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+					</svg>
+				</button>
+				<button class="icon danger" title="Delete" on:click={(e) => del(c, e)} aria-label="Delete">
+					<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+						<path d="M3 4.5h10M6.5 4V3h3v1M5 4.5l.6 8h4.8l.6-8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+					</svg>
+				</button>
+			</span>
           </li>
           {/if}
         {/each}
