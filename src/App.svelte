@@ -19,6 +19,7 @@
   import SavedQueries from "./components/SavedQueries.svelte";
   import ServerMonitor from "./components/ServerMonitor.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
+  import ExplainPlan from "./components/ExplainPlan.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
@@ -266,12 +267,31 @@
     openSqlTab(sql, `${table} ${kind}`);
   }
 
-  // ── EXPLAIN the current query (#34) ──────────────────────────────────────────
-  function explainQuery() {
+  // ── EXPLAIN the current query (#34, #69) ─────────────────────────────────────
+  let explainPlan: Record<string, unknown> | null = null;
+  let explainSql = "";
+  let explainNonce = 0;
+  async function explainQuery() {
     if (tab.kind !== "query") return;
     const sql = tab.doc.trim().replace(/;+\s*$/, "");
-    if (!sql) return;
-    const prefix = $activeConnection?.kind === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
+    if (!sql || !$activeConnectionId) return;
+    const kind = $activeConnection?.kind;
+    // Postgres: a graphical plan tree from EXPLAIN (FORMAT JSON).
+    if (kind === "postgres") {
+      try {
+        const res = await api.executeQuery($activeConnectionId, `EXPLAIN (FORMAT JSON) ${sql}`, `explain-${explainNonce++}`);
+        const raw = res.rows?.[0]?.[0];
+        const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+        const plan = (Array.isArray(arr) ? arr[0] : arr) as { Plan?: Record<string, unknown> } | undefined;
+        if (plan?.Plan) { explainPlan = plan.Plan; explainSql = sql; }
+        else showToast(false, "No plan returned.");
+      } catch (e) {
+        showToast(false, (e as { message?: string })?.message ?? String(e));
+      }
+      return;
+    }
+    // MySQL / SQLite: text EXPLAIN in the grid.
+    const prefix = kind === "sqlite" ? "EXPLAIN QUERY PLAN " : "EXPLAIN ";
     runSql(tab, prefix + sql);
   }
 
@@ -1379,6 +1399,10 @@
 {/if}
 
 <ContextMenu />
+
+{#if explainPlan}
+  <ExplainPlan root={explainPlan} sql={explainSql} on:close={() => (explainPlan = null)} />
+{/if}
 
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
