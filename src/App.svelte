@@ -282,7 +282,7 @@
       id: crypto.randomUUID(), kind: "query", title: `Query ${seq++}`, doc: "SELECT now();",
       result: null, error: null, running: false, view: "data",
       selected: null, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
+      filters: [], filtersOpen: false, selectedRow: null, sort: [], offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -290,7 +290,7 @@
       id: crypto.randomUUID(), kind: "table", title: table, doc: "",
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
-      filters: [], filtersOpen: false, selectedRow: null, sort: null, offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
+      filters: [], filtersOpen: false, selectedRow: null, sort: [], offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
   let tabs: QueryTab[] = [blankQueryTab()];
@@ -503,7 +503,9 @@
     t.title = table;
     t.selectedRow = null;
     t.results = [];
-    const order = t.sort ? ` ORDER BY ${qid(t.sort.col)} ${t.sort.dir === "desc" ? "DESC" : "ASC"}` : "";
+    const order = t.sort.length
+      ? ` ORDER BY ${t.sort.map((s) => `${qid(s.col)} ${s.dir === "desc" ? "DESC" : "ASC"}`).join(", ")}`
+      : "";
     const off = t.offset > 0 ? ` OFFSET ${t.offset}` : "";
     t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)}${order} LIMIT ${$settings.rowLimit}${off};`;
     sync();
@@ -550,7 +552,7 @@
     if (tab.kind === "table" && tab.preview) {
       t = tab;
       t.filters = [];
-      t.sort = null;
+      t.sort = [];
       t.offset = 0;
       t.preview = !pin;
       t.selected = { schema, table };
@@ -613,12 +615,37 @@
   }
 
   // ── Sort (table tabs) ───────────────────────────────────────────────────────
-  function toggleSort(col: string) {
+  // Click cycles a column asc → desc → off. Shift-click keeps the others
+  // (multi-column sort); a plain click sorts by this column alone.
+  function toggleSort(col: string, additive = false) {
     if (tab.kind !== "table" || !tab.selected) return;
     const cur = tab.sort;
-    if (!cur || cur.col !== col) tab.sort = { col, dir: "asc" };
-    else if (cur.dir === "asc") tab.sort = { col, dir: "desc" };
-    else tab.sort = null;
+    const at = cur.findIndex((s) => s.col === col);
+    let next: { col: string; dir: "asc" | "desc" }[];
+    if (additive) {
+      next = [...cur];
+      if (at < 0) next.push({ col, dir: "asc" });
+      else if (next[at].dir === "asc") next[at] = { col, dir: "desc" };
+      else next.splice(at, 1);
+    } else if (at < 0) {
+      next = [{ col, dir: "asc" }];
+    } else if (cur[at].dir === "asc" && cur.length === 1) {
+      next = [{ col, dir: "desc" }];
+    } else {
+      next = []; // collapse to unsorted
+    }
+    tab.sort = next;
+    tab.offset = 0;
+    sync();
+    browseTable(tab, tab.selected.schema, tab.selected.table);
+  }
+
+  // Quick filter from the grid context menu — add a condition and re-browse.
+  function quickFilter(e: CustomEvent<{ column: string; op: import("./lib/types").FilterOp; value: string }>) {
+    if (tab.kind !== "table" || !tab.selected) return;
+    const { column, op, value } = e.detail;
+    tab.filters = [...tab.filters.filter((f) => !(f.column === column && f.op === op)), { column, op, value }];
+    tab.filtersOpen = true;
     tab.offset = 0;
     sync();
     browseTable(tab, tab.selected.schema, tab.selected.table);
@@ -1279,7 +1306,8 @@
                     on:followFk={followFk}
                     on:commit={commitEdits}
                     on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; if ($settings.showSidebarRowDetail) detailOpen = true; sync(); }}
-                    on:sortColumn={(e) => toggleSort(e.detail)}
+                    on:sortColumn={(e) => toggleSort(e.detail.col, e.detail.additive)}
+                    on:filterBy={quickFilter}
                     on:deleteRows={deleteRows}
                     on:copyAs={copyRowsAs}
                   />

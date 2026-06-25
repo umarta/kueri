@@ -22,7 +22,7 @@
   /** Alternating row background colors (a workspace setting). */
   export let altRows = true;
   /** Current sort (drives the header indicator); set by the parent. */
-  export let sort: { col: string; dir: "asc" | "desc" } | null = null;
+  export let sort: { col: string; dir: "asc" | "desc" }[] = [];
   /** Whether clicking a header sorts (table browse only). */
   export let sortable = false;
   /** `schema.table` for persisting per-table column visibility ("" = no persist). */
@@ -33,10 +33,11 @@
   const dispatch = createEventDispatcher<{
     commit: RowEdit[];
     selectRow: number;
-    sortColumn: string;
     deleteRows: number[];
     followFk: { column: string; value: string };
     copyAs: { format: string; indices: number[] };
+    sortColumn: { col: string; additive: boolean };
+    filterBy: { column: string; op: import("../lib/types").FilterOp; value: string };
   }>();
 
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
@@ -173,6 +174,7 @@
     const rows = selected.size ? [...selected].sort((a, b) => a - b) : [r];
     const multi = rows.length > 1;
     const cellVal = isNull(cell) ? "" : fmt(cell);
+    const colName = visible[vc].name;
     openContextMenu(e, [
       { label: "Copy", action: () => navigator.clipboard.writeText(cellVal).catch(() => {}) },
       { label: multi ? `Copy ${rows.length} Rows` : "Copy Row", action: () => copySelected() },
@@ -180,6 +182,9 @@
       { label: "Copy as JSON", action: () => dispatch("copyAs", { format: "json", indices: rows }) },
       { label: "Copy as Markdown", action: () => dispatch("copyAs", { format: "markdown", indices: rows }) },
       { label: "Copy as SQL", action: () => dispatch("copyAs", { format: "sql", indices: rows }) },
+      { separator: true },
+      { label: isNull(cell) ? "Filter: IS NULL" : `Filter: ${colName} = “${cellVal.slice(0, 18)}”`, action: () => dispatch("filterBy", { column: colName, op: isNull(cell) ? "is null" : "=", value: cellVal }) },
+      { label: isNull(cell) ? "Filter: IS NOT NULL" : `Exclude: ${colName} ≠ “${cellVal.slice(0, 18)}”`, action: () => dispatch("filterBy", { column: colName, op: isNull(cell) ? "is not null" : "!=", value: cellVal }) },
       { separator: true },
       { label: "Edit Cell", disabled: !editable, action: () => result && startEdit(r, c, result.rows[r][c]) },
       { label: multi ? `Set NULL in ${rows.length} Rows` : "Set NULL", disabled: !editable, action: () => (multi ? bulkSet(c, rows, null) : setNullCell(r, c)) },
@@ -442,10 +447,11 @@
         <div class="hcell gutter" role="columnheader"></div>
         {#each visible as v (v.name)}
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-          <div class="hcell" class:sortable class:fk={fkColumns.has(v.name)} role="columnheader" tabindex="-1" title={fkColumns.has(v.name) ? `${v.name} (foreign key)` : v.name} on:click={() => sortable && dispatch("sortColumn", v.name)}>
+          {@const si = sort.findIndex((s) => s.col === v.name)}
+          <div class="hcell" class:sortable class:fk={fkColumns.has(v.name)} role="columnheader" tabindex="-1" title={sortable ? "Click to sort · Shift-click to add" : v.name} on:click={(e) => sortable && dispatch("sortColumn", { col: v.name, additive: e.shiftKey })}>
             {#if fkColumns.has(v.name)}<span class="fk-key" aria-hidden="true">⚷</span>{/if}
             <span class="hname">{v.name}</span>
-            {#if sort && sort.col === v.name}<span class="sortind">{sort.dir === "asc" ? "↑" : "↓"}</span>{/if}
+            {#if si >= 0}<span class="sortind">{sort[si].dir === "asc" ? "↑" : "↓"}{#if sort.length > 1}<span class="sortord">{si + 1}</span>{/if}</span>{/if}
           </div>
         {/each}
       </div>
@@ -668,7 +674,8 @@
   .hcell.sortable { cursor: pointer; }
   .hcell.sortable:hover { color: var(--ink); background: var(--bg-elevated); }
   .hname { overflow: hidden; text-overflow: ellipsis; }
-  .sortind { margin-left: auto; color: var(--accent); font-size: 11px; flex: none; }
+  .sortind { margin-left: auto; color: var(--accent); font-size: 11px; flex: none; display: inline-flex; align-items: center; gap: 1px; }
+  .sortord { font-size: 8.5px; font-weight: 700; opacity: 0.8; }
   .fk-key { color: var(--accent); font-size: 10px; flex: none; opacity: 0.8; }
 
   .body { position: relative; width: 100%; }

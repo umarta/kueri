@@ -91,7 +91,8 @@ export interface QueryTab {
   filters: FilterCond[];
   filtersOpen: boolean;
   selectedRow: number | null;
-  sort: { col: string; dir: "asc" | "desc" } | null;
+  /** Sort columns in priority order (multi-column sort). */
+  sort: { col: string; dir: "asc" | "desc" }[];
   offset: number;
   foreignKeys: ForeignKey[];
   /** Result sets from a multi-statement run (empty/1 for a single statement). */
