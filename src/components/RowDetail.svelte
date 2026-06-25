@@ -5,11 +5,17 @@
     isDate, isDateTime, isDateTimeTz, toDateValue, toDateString, toDateOnlyString,
     splitTz, combineTz, TZ_OFFSETS,
   } from "../lib/datetime";
-  import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
+  import { api } from "../lib/tauri";
+  import { qIdent, qTable } from "../lib/sqlexport";
+  import type { QueryResult, RowEdit, ColumnInfo, ForeignKey, DbKind } from "../lib/types";
 
   export let result: QueryResult | null = null;
   export let index: number | null = null;
   export let columns: ColumnInfo[] = [];
+  /** Foreign keys on the table — drive a lookup dropdown for those columns. */
+  export let foreignKeys: ForeignKey[] = [];
+  export let connectionId: string | null = null;
+  export let kind: DbKind = "postgres";
   export let editable = false;
   /** Insert mode: a blank form built from `columns` for a new row. */
   export let insert = false;
@@ -54,6 +60,45 @@
     : result
       ? result.columns.map((col, i) => ({ col, type: typeMap.get(col) ?? "", i }))
       : []) as Entry[];
+
+  // ── Foreign-key lookup (#72) ──────────────────────────────────────────────────
+  $: fkMap = new Map(foreignKeys.map((f) => [f.column, f]));
+  let fkOpts: Record<string, { key: string; label: string }[]> = {};
+  let fkLoading = new Set<string>();
+  function pickLabel(cols: ColumnInfo[], key: string): string {
+    const pref = /^(name|title|label|email|code|description|username|slug|full_?name)$/i;
+    const byName = cols.find((c) => c.name !== key && pref.test(c.name));
+    if (byName) return byName.name;
+    const txt = cols.find((c) => c.name !== key && /char|text|name/i.test(c.data_type));
+    return txt?.name ?? "";
+  }
+  async function loadFk(col: string) {
+    const fk = fkMap.get(col);
+    if (!fk || !connectionId || col in fkOpts || fkLoading.has(col)) return;
+    fkLoading = new Set(fkLoading).add(col);
+    try {
+      const refCols = await api.listColumns(connectionId, fk.ref_schema, fk.ref_table);
+      const label = pickLabel(refCols, fk.ref_column);
+      const sel = label ? `${qIdent(kind, fk.ref_column)}, ${qIdent(kind, label)}` : qIdent(kind, fk.ref_column);
+      const order = qIdent(kind, label || fk.ref_column);
+      const sql = `SELECT ${sel} FROM ${qTable(kind, fk.ref_schema, fk.ref_table)} ORDER BY ${order} LIMIT 500`;
+      const res = await api.executeQuery(connectionId, sql, `fk-${col}-${insertNonce}-${index}`);
+      fkOpts = {
+        ...fkOpts,
+        [col]: res.rows.map((r) => ({ key: fmt(r[0]), label: r[1] === undefined || r[1] === null ? "" : fmt(r[1]) })),
+      };
+    } catch {
+      fkOpts = { ...fkOpts, [col]: [] };
+    } finally {
+      const s = new Set(fkLoading);
+      s.delete(col);
+      fkLoading = s;
+    }
+  }
+  // Eagerly load options for FK columns so the dropdown is ready on first click.
+  $: if ((insert || editable) && connectionId) {
+    for (const e of entries) if (fkMap.has(e.col)) loadFk(e.col);
+  }
 
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
@@ -158,7 +203,29 @@
 
           {#if insert || editable}
             <div class="rd-control" class:edited={has(e)} class:nulled={nulled(e)}>
-              {#if isEnum(e)}
+              {#if fkMap.has(e.col)}
+                <select
+                  class="rd-input rd-select"
+                  aria-label={e.col}
+                  on:focus={() => loadFk(e.col)}
+                  on:change={(ev) => {
+                    const v = ev.currentTarget.value;
+                    if (v === "__rd_default__") unset(e);
+                    else setVal(e, v === "__rd_null__" ? null : v);
+                  }}
+                >
+                  {#if insert}<option value="__rd_default__" selected={!provided(e)}>(default)</option>{/if}
+                  {#if !nulled(e) && curStr(e) && !(fkOpts[e.col] ?? []).some((o) => o.key === curStr(e))}
+                    <option value={curStr(e)} selected>{curStr(e)}</option>
+                  {/if}
+                  {#each fkOpts[e.col] ?? [] as o (o.key)}
+                    <option value={o.key} selected={curStr(e) === o.key && !nulled(e) && (!insert || provided(e))}>{o.key}{o.label ? ` · ${o.label}` : ""}</option>
+                  {/each}
+                  {#if fkLoading.has(e.col)}<option disabled>Loading…</option>{/if}
+                  <option value="__rd_null__" selected={nulled(e)}>NULL</option>
+                </select>
+                <button class="rd-menu-btn" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
+              {:else if isEnum(e)}
                 <select
                   class="rd-input rd-select"
                   aria-label={e.col}
