@@ -290,7 +290,7 @@
         {#each pkColumns as p (p)}<span class="pk-chip">{p}</span>{/each}
       {/if}
       <div class="hspace"></div>
-      {#if table}<button class="hbtn" class:on={ddlOpen} on:click={toggleDdl}>DDL</button>{/if}
+      {#if table && !isView}<button class="hbtn" class:on={ddlOpen} on:click={toggleDdl}>DDL</button>{/if}
       {#if canEdit}<button class="hbtn accent" on:click={startAdd} disabled={busy}>+ Column</button>{/if}
       <div class="search">
         <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -314,7 +314,7 @@
       </div>
     {/if}
 
-    {#if ddlOpen}
+    {#if ddlOpen && !isView}
       <div class="ddl-panel">
         <div class="ddl-head">
           <span>CREATE statement</span>
