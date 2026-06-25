@@ -18,6 +18,7 @@
   import ImportDialog from "./components/ImportDialog.svelte";
   import SavedQueries from "./components/SavedQueries.svelte";
   import ServerMonitor from "./components/ServerMonitor.svelte";
+  import ContextMenu from "./components/ContextMenu.svelte";
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
@@ -1298,6 +1299,8 @@
 {#if serverOpen && $activeConnectionId}
   <ServerMonitor connectionId={$activeConnectionId} on:close={() => (serverOpen = false)} />
 {/if}
+
+<ContextMenu />
 
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
