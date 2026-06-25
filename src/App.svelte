@@ -40,6 +40,7 @@
   let inserting = false;
   let insertInitial: Record<string, string | null> | null = null;
   let insertNonce = 0;
+  let insertEdits: Record<string, string | null> = {}; // draft values, mirrored into the grid
   let settingsOpen = false;
   let exportOpen = false;
   let csvImportOpen = false;
@@ -1224,6 +1225,8 @@
                     result={tab.result}
                     columns={tab.columns}
                     bind:edits={tab.cellEdits}
+                    {inserting}
+                    {insertEdits}
                     editable={editing}
                     altRows={$settings.altRows}
                     selectedRow={tab.selectedRow}
@@ -1259,6 +1262,7 @@
                     index={tab.selectedRow}
                     columns={tab.columns}
                     bind:edits={tab.cellEdits}
+                    bind:insertEdits
                     editable={editing}
                     insert={inserting}
                     initial={insertInitial}
