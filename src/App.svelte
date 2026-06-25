@@ -1112,6 +1112,7 @@
     <Toolbar
       {sidebarOpen}
       {logOpen}
+      {detailOpen}
       readOnly={$readOnly}
       inTxn={activeInTxn}
       {txnBusy}
@@ -1120,6 +1121,7 @@
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
+      on:toggleDetail={() => (detailOpen = !detailOpen)}
       on:toggleReadOnly={() => readOnly.update((v) => !v)}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
