@@ -222,6 +222,21 @@ pub async fn list_roles(state: State<'_, AppState>, id: String) -> AppResult<Vec
 }
 
 #[tauri::command]
+pub async fn set_column_comment(
+    state: State<'_, AppState>,
+    id: String,
+    schema: String,
+    table: String,
+    column: String,
+    comment: String,
+) -> AppResult<()> {
+    state
+        .get(&id)?
+        .set_column_comment(&schema, &table, &column, &comment)
+        .await
+}
+
+#[tauri::command]
 pub async fn create_schema(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
     state.get(&id)?.create_schema(&name).await
 }

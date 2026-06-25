@@ -140,6 +140,31 @@ pub trait Driver: Send + Sync {
             .await?;
         Ok(())
     }
+    /// Set/clear a column comment. Postgres only for now (clean `COMMENT ON`);
+    /// MySQL needs the full column definition and SQLite has no comments.
+    async fn set_column_comment(
+        &self,
+        schema: &str,
+        table: &str,
+        column: &str,
+        comment: &str,
+    ) -> AppResult<()> {
+        if self.dialect() != Dialect::Postgres {
+            return Err(AppError::Other(
+                "Editing column comments is currently supported on PostgreSQL only.".into(),
+            ));
+        }
+        self.run_query(&ddl::set_column_comment(
+            self.dialect(),
+            schema,
+            table,
+            column,
+            comment,
+        ))
+        .await?;
+        Ok(())
+    }
+
     async fn create_index(
         &self,
         schema: &str,

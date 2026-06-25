@@ -223,6 +223,23 @@
     if (!col) return;
     if (await run(() => api.dropColumn(connectionId!, schema, table, col))) confirmDrop = null;
   }
+
+  // ── Edit column comment (Postgres) ────────────────────────────────────────────
+  $: commentOk = canEdit && kind === "postgres";
+  let commenting: string | null = null;
+  let commentVal = "";
+  function startComment(name: string, current: string | null) {
+    error = "";
+    commenting = name;
+    commentVal = current ?? "";
+  }
+  async function commitComment() {
+    const col = commenting;
+    if (!col) return;
+    if (await run(() => api.setColumnComment(connectionId!, schema, table, col, commentVal.trim()))) {
+      commenting = null;
+    }
+  }
 </script>
 
 {#if columns.length || canEdit}
@@ -313,7 +330,17 @@
                   <span class="dim">{fkMap.has(c.name) ? "" : "—"}</span>
                 {/if}
               </td>
-              <td class:dim={!c.comment} title={c.comment ?? ""}>{c.comment ?? "—"}</td>
+              <td class:dim={!c.comment} title={commentOk ? "Double-click to edit comment" : c.comment ?? ""}>
+                {#if commenting === c.name}
+                  <!-- svelte-ignore a11y-autofocus -->
+                  <input class="cin" bind:value={commentVal} autofocus spellcheck="false" placeholder="comment"
+                    on:keydown={(e) => { if (e.key === "Enter") commitComment(); else if (e.key === "Escape") commenting = null; }}
+                    on:blur={commitComment} />
+                {:else}
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <span class="cmt-text" class:editable={commentOk} on:dblclick={() => commentOk && startComment(c.name, c.comment ?? null)}>{c.comment ?? "—"}</span>
+                {/if}
+              </td>
               <td class="ax">
                 {#if canEdit}
                   <button class="act" title="Rename column" on:click={() => startRename(c.name)} disabled={busy}>
@@ -520,6 +547,8 @@
   .gut { width: 44px; min-width: 44px; text-align: right; color: var(--faint); background: var(--bg-panel); user-select: none; font-family: var(--font-mono); font-size: 11px; position: sticky; left: 0; }
   .cn { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
   .cn-text.editable { cursor: text; }
+  .cmt-text.editable { cursor: text; }
+  .cmt-text.editable:hover { text-decoration: underline dotted var(--faint); }
   .keyi { color: var(--accent); font-size: 10px; margin-right: 5px; }
   .ty { font-family: var(--font-mono); color: var(--accent); }
   .algo { font-family: var(--font-mono); color: var(--muted); font-size: 11px; }
