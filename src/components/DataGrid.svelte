@@ -36,6 +36,7 @@
     sortColumn: string;
     deleteRows: number[];
     followFk: { column: string; value: string };
+    copyAs: { format: string; indices: number[] };
   }>();
 
   $: typeMap = new Map(columns.map((c) => [c.name, c.data_type]));
@@ -157,18 +158,36 @@
     edits = edits;
   }
 
+  function bulkSet(c: number, rows: number[], value: string | null) {
+    for (const r of rows) {
+      const k = key(r, c);
+      if (value === null ? isNull(result?.rows[r][c]) : fmt(result?.rows[r][c]) === value) delete edits[k];
+      else edits[k] = value;
+    }
+    edits = edits;
+  }
+
   function cellMenu(e: MouseEvent, r: number, c: number, vc: number, cell: unknown) {
     active = { r, vc };
     if (!selected.has(r)) selected = new Set([r]);
     const rows = selected.size ? [...selected].sort((a, b) => a - b) : [r];
+    const multi = rows.length > 1;
+    const cellVal = isNull(cell) ? "" : fmt(cell);
     openContextMenu(e, [
-      { label: "Copy", action: () => navigator.clipboard.writeText(isNull(cell) ? "" : fmt(cell)).catch(() => {}) },
-      { label: rows.length > 1 ? `Copy ${rows.length} Rows` : "Copy Row", action: () => copySelected() },
+      { label: "Copy", action: () => navigator.clipboard.writeText(cellVal).catch(() => {}) },
+      { label: multi ? `Copy ${rows.length} Rows` : "Copy Row", action: () => copySelected() },
+      { label: "Copy as CSV", action: () => dispatch("copyAs", { format: "csv", indices: rows }) },
+      { label: "Copy as JSON", action: () => dispatch("copyAs", { format: "json", indices: rows }) },
+      { label: "Copy as Markdown", action: () => dispatch("copyAs", { format: "markdown", indices: rows }) },
+      { label: "Copy as SQL", action: () => dispatch("copyAs", { format: "sql", indices: rows }) },
       { separator: true },
       { label: "Edit Cell", disabled: !editable, action: () => result && startEdit(r, c, result.rows[r][c]) },
-      { label: "Set NULL", disabled: !editable, action: () => setNullCell(r, c) },
+      { label: multi ? `Set NULL in ${rows.length} Rows` : "Set NULL", disabled: !editable, action: () => (multi ? bulkSet(c, rows, null) : setNullCell(r, c)) },
+      ...(multi && !isNull(cell)
+        ? [{ label: `Fill ${rows.length} Rows with “${cellVal.slice(0, 20)}”`, disabled: !editable, action: () => bulkSet(c, rows, cellVal) }]
+        : []),
       { separator: true },
-      { label: rows.length > 1 ? `Delete ${rows.length} Rows` : "Delete Row", danger: true, disabled: !editable, action: () => dispatch("deleteRows", rows) },
+      { label: multi ? `Delete ${rows.length} Rows` : "Delete Row", danger: true, disabled: !editable, action: () => dispatch("deleteRows", rows) },
     ]);
   }
 
