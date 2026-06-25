@@ -297,7 +297,7 @@
   $: tab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   // Editable when the tab resolves to a single updatable table — always true for a
   // table-browse tab, and for a query tab whose SQL is a simple `SELECT * FROM <table>`.
-  $: editing = !!tab.editableTable && !tab.running;
+  $: editing = !!tab.editableTable && !tab.running && !$readOnly;
   const sync = () => (tabs = tabs); // commit mutations of a tab back to the array
 
   function newTab() {
@@ -781,6 +781,7 @@
 
   // ── Insert row ────────────────────────────────────────────────────────────
   function beginInsert() {
+    if ($readOnly) { showToast(false, blockedMsg); return; }
     if (tab.kind !== "table" || !tab.selected || tab.columns.length === 0) return;
     insertInitial = null;
     insertNonce += 1;
