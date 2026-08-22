@@ -1,6 +1,7 @@
 //! Password source abstraction.
 
 pub mod onepassword;
+pub mod vault;
 
 use async_trait::async_trait;
 use keyring::Entry;
@@ -91,7 +92,10 @@ pub async fn resolve(source: &PasswordSource, conn_id: Uuid) -> AppResult<Secret
                 .resolve()
                 .await
         }
-        PasswordSource::Vault { .. } | PasswordSource::AwsSm { .. } => Err(AppError::Other(
+        PasswordSource::Vault { path, field } => {
+            vault::VaultResolver { path, field }.resolve().await
+        }
+        PasswordSource::AwsSm { .. } => Err(AppError::Other(
             "external secret providers ship in Phase 5".into(),
         )),
     }
