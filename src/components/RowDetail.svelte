@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { DateInput } from "date-picker-svelte";
+  import CellViewer from "./CellViewer.svelte";
   import {
     isDate, isDateTime, isDateTimeTz, toDateValue, toDateString, toDateOnlyString,
     splitTz, combineTz, TZ_OFFSETS,
@@ -102,6 +103,19 @@
 
   const isBool = (t: string) => /bool/i.test(t);
   const isJson = (t: string) => /json/i.test(t);
+  const isBinary = (t: string) => /bytea|blob|bytes|binary|image|varbinary/i.test(t) || /^bit(\s|\(|$)/i.test(t);
+  const isLongText = (v: string) => v != null && v.length > 500;
+
+  // ── Cell viewer modal ─────────────────────────────────────────────────────
+  let viewer: { col: string; type: string; value: unknown } | null = null;
+  function shouldOfferViewer(e: Entry): boolean {
+    if (isJson(e.type) || isBinary(e.type)) return true;
+    const raw = fmt(row?.[e.i]);
+    return !isNull(row?.[e.i]) && isLongText(raw);
+  }
+  function openViewer(e: Entry) {
+    viewer = { col: e.col, type: e.type, value: has(e) ? getv(e) : row?.[e.i] };
+  }
   const isInteger = (t: string) => /\b(int|integer|smallint|bigint|tinyint|mediumint|serial|oid)\b/i.test(t);
   const isNumeric = (t: string) => /\b(decimal|numeric|float|double|real|money)\b/i.test(t);
   const isNull = (v: unknown) => v === null || v === undefined;
@@ -267,6 +281,7 @@
                   value={nulled(e) ? "" : jsonDisplay(e)}
                   on:input={(ev) => setVal(e, ev.currentTarget.value)}
                 ></textarea>
+                <button class="rd-menu-btn top view" title="Open in viewer" aria-label="Open in viewer" on:click={() => openViewer(e)}>⧉</button>
                 <button class="rd-menu-btn top" title="Field options" aria-label="Field options" on:click={(ev) => openMenu(e, ev)}>⋯</button>
               {:else if isDate(e.type)}
                 <DateInput
@@ -351,7 +366,12 @@
               {/if}
             </div>
           {:else}
-            <div class="fval ro" class:nullv={isNull(row?.[e.i])}>{isNull(row?.[e.i]) ? "NULL" : isJson(e.type) ? prettyJson(fmt(row?.[e.i])) : fmt(row?.[e.i])}</div>
+            <div class="fval-row">
+              <div class="fval ro" class:nullv={isNull(row?.[e.i])}>{isNull(row?.[e.i]) ? "NULL" : isJson(e.type) ? prettyJson(fmt(row?.[e.i])) : fmt(row?.[e.i])}</div>
+              {#if shouldOfferViewer(e)}
+                <button class="rd-menu-btn view ro" title="Open in viewer" aria-label="Open in viewer" on:click={() => openViewer(e)}>⧉</button>
+              {/if}
+            </div>
           {/if}
         </div>
       {/each}
@@ -372,6 +392,15 @@
     <div class="empty">Select a row to see its values.</div>
   {/if}
 </aside>
+
+{#if viewer}
+  <CellViewer
+    value={viewer.value}
+    columnType={viewer.type}
+    columnName={viewer.col}
+    on:close={() => (viewer = null)}
+  />
+{/if}
 
 {#if menu}
   {@const m = menu}
@@ -431,7 +460,12 @@
     color: var(--faint); font-size: 13px; line-height: 1;
   }
   .rd-menu-btn.top { top: 5px; transform: none; }
+  .rd-menu-btn.top.view { right: 26px; }
+  .rd-menu-btn.view.ro { position: static; margin-left: var(--s-1); flex: none; }
   .rd-menu-btn:hover { color: var(--ink); background: var(--bg-elevated); }
+
+  .fval-row { display: flex; align-items: flex-start; gap: var(--s-1); }
+  .fval-row .fval { flex: 1; min-width: 0; }
 
   /* timestamp-with-time-zone: picker stacked over a (human-labelled) zone select */
   .rd-tzrow { display: flex; flex-direction: column; gap: var(--s-2); padding-right: 22px; }
