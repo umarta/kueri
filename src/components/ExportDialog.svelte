@@ -30,6 +30,7 @@
         cfg.id,
         "SELECT current_setting('server_version_num')",
         `ver-${queryNonce++}`,
+        "off",
       );
       const n = Number(res.rows?.[0]?.[0]);
       if (Number.isFinite(n) && n > 0) return String(Math.floor(n / 10000));
@@ -92,6 +93,7 @@
             id,
             `SELECT * FROM ${qTable(cfg.kind, s.name, t.name)}`,
             `export-${queryNonce++}`,
+            "off",
           );
           const ins = buildInserts(cfg.kind, s.name, t.name, res.columns, res.rows);
           if (ins) out.push(ins, "");

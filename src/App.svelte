@@ -27,7 +27,7 @@
     isReadStatement,
   } from "./lib/stores/connection";
   import {
-    workspaceStates,
+    workspaceStates, currentWorkspace,
     schemaCatalog, activeSchema, readOnly, inTransaction,
     ensureWorkspace, dropWorkspace,
     setSafety, setInTransaction,
@@ -37,6 +37,10 @@
   import { api } from "./lib/tauri";
   import { logSql, logActivity } from "./lib/stores/log";
   import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
+  import SafetyConfirm from "./components/SafetyConfirm.svelte";
+  import { runQuerySafely, CancelledByUser, isSafetyRejected } from "./lib/safety/run";
+  import type { ConfirmReason } from "./lib/safety/labels";
+  import { get } from "svelte/store";
 
   let sidebarOpen = true;
   let sidebar: Sidebar;
@@ -56,6 +60,33 @@
   let serverOpen = false;
   let schemaNewOpen = false;
   let schemaNewName = "";
+
+  // ── Safety confirmation modal ─────────────────────────────────────────────────
+  let safetyConfirmOpen = false;
+  let safetyConfirmStatement = "";
+  let safetyConfirmReason: ConfirmReason = "destructive-no-where";
+  let safetyConfirmResolver: ((ok: boolean) => void) | null = null;
+
+  function showSafetyModal(info: { statement: string; reason: ConfirmReason }): Promise<boolean> {
+    return new Promise((resolve) => {
+      safetyConfirmStatement = info.statement;
+      safetyConfirmReason = info.reason;
+      safetyConfirmOpen = true;
+      safetyConfirmResolver = resolve;
+    });
+  }
+
+  function safetyConfirmCancel() {
+    safetyConfirmResolver?.(false);
+    safetyConfirmOpen = false;
+    safetyConfirmResolver = null;
+  }
+
+  function safetyConfirmOk() {
+    safetyConfirmResolver?.(true);
+    safetyConfirmOpen = false;
+    safetyConfirmResolver = null;
+  }
 
   async function createSchemaAction() {
     if (!$activeConnectionId || !schemaNewName.trim()) return;
@@ -146,15 +177,18 @@
     const BATCH = 200;
     let ok = 0;
     let failErr = "";
+    const csvSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     t.running = true; sync(t);
     for (let i = 0; i < rows.length; i += BATCH) {
       const chunk = rows.slice(i, i + BATCH);
       const values = chunk.map((r) => `(${r.map((v) => (v === "" ? "NULL" : lit(v))).join(", ")})`).join(", ");
       const sql = `INSERT INTO ${into} (${collist}) VALUES ${values};`;
       try {
-        await api.executeQuery($activeConnectionId, sql, t.id);
+        await runQuerySafely($activeConnectionId!, sql, csvSafety, showSafetyModal, t.id);
         ok += chunk.length;
       } catch (err) {
+        if (err instanceof CancelledByUser) break;
+        if (isSafetyRejected(err)) { failErr = `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`; break; }
         failErr = (err as { message?: string })?.message ?? String(err);
         break;
       }
@@ -285,7 +319,8 @@
     // Postgres: a graphical plan tree from EXPLAIN (FORMAT JSON).
     if (kind === "postgres") {
       try {
-        const res = await api.executeQuery($activeConnectionId, `EXPLAIN (FORMAT JSON) ${sql}`, `explain-${explainNonce++}`);
+        const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
+        const res = await runQuerySafely($activeConnectionId, `EXPLAIN (FORMAT JSON) ${sql}`, safety, showSafetyModal, `explain-${explainNonce++}`);
         const raw = res.rows?.[0]?.[0];
         const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
         const plan = (Array.isArray(arr) ? arr[0] : arr) as { Plan?: Record<string, unknown> } | undefined;
@@ -349,12 +384,15 @@
     if (!$activeConnectionId) return;
     t.running = true; t.error = null; sync(t);
     const start = performance.now();
+    const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
-      t.result = await api.executeQuery($activeConnectionId, sql, t.id);
+      t.result = await runQuerySafely($activeConnectionId, sql, safety, showSafetyModal, t.id);
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms });
       if (log) logSql(sql, { ms });
     } catch (e) {
+      if (e instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); t.running = false; sync(t); return; }
       t.error = String(e); t.result = null;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms, error: String(e) });
@@ -435,16 +473,19 @@
     // Multiple statements: run in order, collect each result, stop on first error.
     t.running = true; t.error = null; t.result = null; sync(t);
     const collected: import("./lib/types").QueryResult[] = [];
+    const multiSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     for (let idx = 0; idx < stmts.length; idx++) {
       const s = stmts[idx];
       const start = performance.now();
       try {
-        const r = await api.executeQuery($activeConnectionId!, s, t.id);
+        const r = await runQuerySafely($activeConnectionId!, s, multiSafety, showSafetyModal, t.id);
         collected.push(r);
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms });
         logSql(s, { ms });
       } catch (e) {
+        if (e instanceof CancelledByUser) { break; }
+        if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); break; }
         t.error = `Statement ${idx + 1} of ${stmts.length} failed: ${(e as { message?: string })?.message ?? String(e)}`;
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms, error: String(e) });
@@ -710,6 +751,7 @@
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
     t.running = true; t.error = null; sync(t);
+    const editSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
       for (const ch of e.detail) {
         const sets = Object.entries(ch.updates)
@@ -722,10 +764,12 @@
           })
           .join(" AND ");
         const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
-        await api.executeQuery($activeConnectionId, upd, t.id);
+        await runQuerySafely($activeConnectionId!, upd, editSafety, showSafetyModal, t.id);
         logActivity(upd);
       }
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t); return;
     }
     t.running = false; sync(t);
@@ -800,10 +844,13 @@
       base = table;
       sqlTable = qtable(schema, table);
       try {
-        const r = await api.executeQuery($activeConnectionId, `SELECT * FROM ${sqlTable};`, tab.id);
+        const exportSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
+        const r = await runQuerySafely($activeConnectionId!, `SELECT * FROM ${sqlTable};`, exportSafety, showSafetyModal, tab.id);
         columns = r.columns;
         rows = r.rows;
       } catch (e) {
+        if (e instanceof CancelledByUser) return;
+        if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); return; }
         showToast(false, (e as { message?: string })?.message ?? String(e));
         return;
       }
@@ -857,6 +904,7 @@
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
     t.running = true; t.error = null; sync(t);
+    const delSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
       for (const i of idxs) {
         const row = t.result.rows[i];
@@ -867,10 +915,12 @@
           })
           .join(" AND ");
         const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
-        await api.executeQuery($activeConnectionId, del, t.id);
+        await runQuerySafely($activeConnectionId!, del, delSafety, showSafetyModal, t.id);
         logActivity(del);
       }
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t);
       return;
     }
@@ -923,10 +973,13 @@
       ? `INSERT INTO ${into} (${set.map(qid).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
       : emptyInsert;
     t.running = true; t.error = null; sync(t);
+    const insSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
-      await api.executeQuery($activeConnectionId, sql, t.id);
+      await runQuerySafely($activeConnectionId!, sql, insSafety, showSafetyModal, t.id);
       logActivity(sql);
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t);
       return;
     }
@@ -1394,6 +1447,14 @@
 {#if explainPlan}
   <ExplainPlan root={explainPlan} sql={explainSql} on:close={() => (explainPlan = null)} />
 {/if}
+
+<SafetyConfirm
+  open={safetyConfirmOpen}
+  statement={safetyConfirmStatement}
+  reason={safetyConfirmReason}
+  on:cancel={safetyConfirmCancel}
+  on:confirm={safetyConfirmOk}
+/>
 
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->

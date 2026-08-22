@@ -82,7 +82,7 @@
       const sel = label ? `${qIdent(kind, fk.ref_column)}, ${qIdent(kind, label)}` : qIdent(kind, fk.ref_column);
       const order = qIdent(kind, label || fk.ref_column);
       const sql = `SELECT ${sel} FROM ${qTable(kind, fk.ref_schema, fk.ref_table)} ORDER BY ${order} LIMIT 500`;
-      const res = await api.executeQuery(connectionId, sql, `fk-${col}-${insertNonce}-${index}`);
+      const res = await api.executeQuery(connectionId, sql, `fk-${col}-${insertNonce}-${index}`, "off");
       fkOpts = {
         ...fkOpts,
         [col]: res.rows.map((r) => ({ key: fmt(r[0]), label: r[1] === undefined || r[1] === null ? "" : fmt(r[1]) })),

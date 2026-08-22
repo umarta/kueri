@@ -39,7 +39,7 @@
     defSaving = true;
     defErr = "";
     try {
-      await api.executeQuery(connectionId, viewDef, `viewdef-${defNonce++}`);
+      await api.executeQuery(connectionId, viewDef, `viewdef-${defNonce++}`, "off");
       dispatch("changed");
     } catch (e) {
       defErr = (e as { message?: string })?.message ?? String(e);

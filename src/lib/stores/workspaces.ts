@@ -81,10 +81,6 @@ export function setSafety(connId: string, level: SafetyLevel): void {
     mutate(connId, (w) => { w.safety = level; });
 }
 
-/** @deprecated migrate callers to `setSafety`. Removed at end of Task 7. */
-export function setReadOnly(connId: string, on: boolean): void {
-    setSafety(connId, on ? "read-only" : "off");
-}
 
 export function setInTransaction(connId: string, on: boolean): void {
     mutate(connId, (w) => { w.inTransaction = on; });
