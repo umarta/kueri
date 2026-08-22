@@ -219,16 +219,59 @@ scripts/
 
 # Roadmap
 
+Kueri is under active development. The list below is what's shipped, what's next, and what's on the horizon — see [issues](https://github.com/umarta/kueri/issues) for the full plan and to weigh in on priorities.
+
+### Shipped
+
+* [x] Postgres / MySQL / MariaDB / SQLite drivers behind a unified `Driver` trait
 * [x] Inline editing
-* [x] SSH tunnels
+* [x] SSH tunnels (basic)
 * [x] Transactions
 * [x] Native backup
 * [x] Server monitor
-* [ ] Visual query planner
-* [ ] Data sync between connections
+
+### Next up
+
+* [ ] CodeMirror 6 editor — schema-aware autocomplete, SQL formatter, first-class query parameters
+* [ ] Grid stage/commit with undo/redo and SQL preview panel
+* [ ] Safe Mode — six per-connection protection levels (warn → read-only)
+* [ ] Password sources — OS keychain + 1Password, HashiCorp Vault, AWS Secrets Manager, env vars
+* [ ] SSL/TLS connection settings per driver
+* [ ] SSH tunneling with reusable profiles (one bastion → many DBs)
+* [ ] Command palette (⌘P) — fuzzy search across connections, tables, queries, actions
+* [ ] Persistent query history with full-text search
+* [ ] Favorites — pinned tables and saved queries
+* [ ] Rich cell viewers (JSON tree, hex, image preview) + per-column display formats
+* [ ] AI assistant — chat, inline SQL generation, explain/optimize/fix (bring-your-own-key)
+
+### Later
+
+* [ ] Plugin architecture — external drivers, import/export formats, themes
+* [ ] MCP server — expose connections to Claude Desktop, Cursor, and other LLM clients
+* [ ] Vim mode in the SQL editor
+* [ ] EXPLAIN visualization — interactive query plan tree
+* [ ] ER diagram — visual schema with pan/zoom
+* [ ] Schema diff / structure sync between databases
+* [ ] Data transfer — copy tables/data between connections
+* [ ] Data generation — plausible fake rows per column type
+* [ ] Server dashboard — live connections and activity
+* [ ] Charts / data visualization on result sets
+* [ ] Backup scheduling & automation (pg_dump / mysqldump / SQL / CSV / XLSX)
+* [ ] Import wizard — Excel / JSON / SQL file
+* [ ] Export — Excel / HTML / Markdown
+* [ ] Table info panel (size, rows, encoding)
+* [ ] Constraints (CHECK / UNIQUE) editor + functions & triggers editor
+* [ ] Multiple windows
+* [ ] Session restore — tabs + workspace snapshot per connection
+* [ ] Connection import / export / duplicate
+* [ ] Open Project Folder — auto-detect connections from `.env` / `docker-compose.yml`
+* [ ] `kueri://` URL scheme for external integrations
+
+### On the horizon
+
 * [ ] SQL Server driver
-* [ ] Redis browser
-* [ ] MongoDB browser
+* [ ] MongoDB + Redis (separate non-tabular UI mode)
+* [ ] Users & Roles management (Postgres / MySQL) with staged privilege changes
 
 ---
 
