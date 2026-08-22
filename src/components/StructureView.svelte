@@ -2,7 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
   import { typeOptions, alterTypeOptions, supportsColumnAlter, type ColumnDraft } from "../lib/ddl";
-  import { readOnly } from "../lib/stores/connection";
+  import { readOnly } from "../lib/stores/workspaces";
   import type { ColumnInfo, DbKind, IndexInfo, ForeignKey } from "../lib/types";
 
   export let columns: ColumnInfo[] = [];
