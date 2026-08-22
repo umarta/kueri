@@ -48,7 +48,7 @@ export type PasswordSource =
  */
 export type SshAuth =
   | { kind: "password"; source: PasswordSource }
-  | { kind: "key-file"; path: string; passphrase: PasswordSource | null }
+  | { kind: "key-file"; path: string; passphrase?: PasswordSource | null }
   | { kind: "agent" };
 
 /**
