@@ -1,10 +1,10 @@
 //! Password source abstraction (Phase 1: Plain/Keychain/Env resolvers).
 
-use std::env;
-use serde::{Deserialize, Serialize};
-use secrecy::SecretString;
-use uuid::Uuid;
 use keyring::Entry;
+use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
+use std::env;
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
@@ -15,12 +15,23 @@ const KEYRING_SERVICE: &str = "dev.kueri.app";
 pub enum PasswordSource {
     Plain,
     Keychain,
-    Env { name: String },
+    Env {
+        name: String,
+    },
     #[serde(rename = "onepassword")]
-    OnePassword { item: String, field: String },
-    Vault { path: String, field: String },
+    OnePassword {
+        item: String,
+        field: String,
+    },
+    Vault {
+        path: String,
+        field: String,
+    },
     #[serde(rename = "aws-sm")]
-    AwsSm { arn: String, region: String },
+    AwsSm {
+        arn: String,
+        region: String,
+    },
 }
 
 /// Resolve a password source to the plaintext secret, right before pool creation.
@@ -44,8 +55,8 @@ pub fn resolve(source: &PasswordSource, conn_id: Uuid) -> AppResult<SecretString
         },
         PasswordSource::OnePassword { .. }
         | PasswordSource::Vault { .. }
-        | PasswordSource::AwsSm { .. } => {
-            Err(AppError::Other("external secret providers ship in Phase 5".into()))
-        }
+        | PasswordSource::AwsSm { .. } => Err(AppError::Other(
+            "external secret providers ship in Phase 5".into(),
+        )),
     }
 }

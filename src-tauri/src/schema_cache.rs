@@ -40,7 +40,9 @@ impl CachedSchema {
 
 impl SchemaCache {
     pub fn new() -> Self {
-        Self { entries: RwLock::new(HashMap::new()) }
+        Self {
+            entries: RwLock::new(HashMap::new()),
+        }
     }
 
     pub async fn schemas(&self, id: Uuid, driver: &dyn Driver) -> AppResult<Vec<SchemaInfo>> {
@@ -56,14 +58,22 @@ impl SchemaCache {
         }
         // Slow path: fetch + write lock
         let fresh = driver.list_schemas().await?;
-        let mut write = self.entries.write().map_err(|_| AppError::Other("cache lock poisoned".into()))?;
+        let mut write = self
+            .entries
+            .write()
+            .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
         entry.schemas = Some(fresh.clone());
         entry.fetched_at = Instant::now();
         Ok(fresh)
     }
 
-    pub async fn tables(&self, id: Uuid, schema: &str, driver: &dyn Driver) -> AppResult<Vec<TableInfo>> {
+    pub async fn tables(
+        &self,
+        id: Uuid,
+        schema: &str,
+        driver: &dyn Driver,
+    ) -> AppResult<Vec<TableInfo>> {
         if let Ok(read) = self.entries.read() {
             if let Some(entry) = read.get(&id) {
                 if entry.is_fresh() {
@@ -74,14 +84,23 @@ impl SchemaCache {
             }
         }
         let fresh = driver.list_tables(schema).await?;
-        let mut write = self.entries.write().map_err(|_| AppError::Other("cache lock poisoned".into()))?;
+        let mut write = self
+            .entries
+            .write()
+            .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
         entry.tables.insert(schema.to_string(), fresh.clone());
         entry.fetched_at = Instant::now();
         Ok(fresh)
     }
 
-    pub async fn columns(&self, id: Uuid, schema: &str, table: &str, driver: &dyn Driver) -> AppResult<Vec<ColumnInfo>> {
+    pub async fn columns(
+        &self,
+        id: Uuid,
+        schema: &str,
+        table: &str,
+        driver: &dyn Driver,
+    ) -> AppResult<Vec<ColumnInfo>> {
         let key = (schema.to_string(), table.to_string());
         if let Ok(read) = self.entries.read() {
             if let Some(entry) = read.get(&id) {
@@ -93,7 +112,10 @@ impl SchemaCache {
             }
         }
         let fresh = driver.list_columns(schema, table).await?;
-        let mut write = self.entries.write().map_err(|_| AppError::Other("cache lock poisoned".into()))?;
+        let mut write = self
+            .entries
+            .write()
+            .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
         entry.columns.insert(key, fresh.clone());
         entry.fetched_at = Instant::now();
@@ -112,16 +134,18 @@ impl SchemaCache {
 }
 
 impl Default for SchemaCache {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::ddl::Dialect;
+    use crate::db::driver::QueryResult;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use crate::db::driver::{QueryResult};
-    use crate::db::ddl::Dialect;
 
     /// Minimal Driver mock for cache testing. Counts calls to the three read-only
     /// methods the cache uses; every other required method panics if invoked.
@@ -140,8 +164,13 @@ mod tests {
                 schemas_calls: AtomicUsize::new(0),
                 tables_calls: AtomicUsize::new(0),
                 columns_calls: AtomicUsize::new(0),
-                schemas_return: vec![SchemaInfo { name: "public".into() }],
-                tables_return: vec![TableInfo { name: "users".into(), kind: "table".into() }],
+                schemas_return: vec![SchemaInfo {
+                    name: "public".into(),
+                }],
+                tables_return: vec![TableInfo {
+                    name: "users".into(),
+                    kind: "table".into(),
+                }],
                 columns_return: vec![],
             }
         }
@@ -212,7 +241,10 @@ mod tests {
         let id = Uuid::new_v4();
         cache.columns(id, "public", "users", &driver).await.unwrap();
         cache.columns(id, "public", "users", &driver).await.unwrap();
-        cache.columns(id, "public", "orders", &driver).await.unwrap();
+        cache
+            .columns(id, "public", "orders", &driver)
+            .await
+            .unwrap();
         assert_eq!(driver.columns_calls.load(Ordering::SeqCst), 2);
     }
 

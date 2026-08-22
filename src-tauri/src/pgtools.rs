@@ -155,7 +155,11 @@ async fn mysql_restore(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> App
     run(cmd, "mysql").await
 }
 
-async fn pg_restore_or_psql(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> AppResult<String> {
+async fn pg_restore_or_psql(
+    cfg: &ConnectionConfigV2,
+    path: &str,
+    tools: &str,
+) -> AppResult<String> {
     let lower = path.to_lowercase();
     let custom =
         lower.ends_with(".dump") || lower.ends_with(".backup") || lower.ends_with(".pgdump");
