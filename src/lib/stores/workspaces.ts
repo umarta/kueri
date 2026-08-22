@@ -1,5 +1,5 @@
 import { writable, derived, get, type Readable } from "svelte/store";
-import type { QueryTab } from "../types";
+import type { QueryTab, SafetyLevel } from "../types";
 import { activeConnectionId } from "./connection";
 
 export type WorkspaceState = {
@@ -10,10 +10,11 @@ export type WorkspaceState = {
     tabs: QueryTab[];
     focusedTabId: string | null;
     inTransaction: boolean;
-    readOnly: boolean;
+    safety: SafetyLevel;
+    dismissedSafetyBanner: boolean;
 };
 
-function blankWorkspace(connectionId: string): WorkspaceState {
+function blankWorkspace(connectionId: string, safety: SafetyLevel = "confirm-destructive"): WorkspaceState {
     return {
         connectionId,
         activeSchema: "",
@@ -22,7 +23,8 @@ function blankWorkspace(connectionId: string): WorkspaceState {
         tabs: [],
         focusedTabId: null,
         inTransaction: false,
-        readOnly: false,
+        safety,
+        dismissedSafetyBanner: false,
     };
 }
 
@@ -37,15 +39,15 @@ export const currentWorkspace: Readable<WorkspaceState | null> = derived(
 // ── Derived re-exports that preserve the old global names ────────────────────
 export const activeSchema: Readable<string> = derived(currentWorkspace, (w) => w?.activeSchema ?? "");
 export const schemaCatalog: Readable<Record<string, string[]>> = derived(currentWorkspace, (w) => w?.schemaCatalog ?? {});
-export const readOnly: Readable<boolean> = derived(currentWorkspace, (w) => w?.readOnly ?? false);
+export const readOnly: Readable<boolean> = derived(currentWorkspace, (w) => w?.safety === "read-only");
 export const inTransaction: Readable<boolean> = derived(currentWorkspace, (w) => w?.inTransaction ?? false);
 
 // ── Lifecycle helpers ────────────────────────────────────────────────────────
-export function ensureWorkspace(connId: string): void {
+export function ensureWorkspace(connId: string, defaultSafety?: SafetyLevel): void {
     workspaceStates.update((states) => {
         if (!states.has(connId)) {
             const next = new Map(states);
-            next.set(connId, blankWorkspace(connId));
+            next.set(connId, blankWorkspace(connId, defaultSafety));
             return next;
         }
         return states;
@@ -75,12 +77,21 @@ export function setActiveSchema(connId: string, schema: string): void {
     mutate(connId, (w) => { w.activeSchema = schema; });
 }
 
+export function setSafety(connId: string, level: SafetyLevel): void {
+    mutate(connId, (w) => { w.safety = level; });
+}
+
+/** @deprecated migrate callers to `setSafety`. Removed at end of Task 7. */
 export function setReadOnly(connId: string, on: boolean): void {
-    mutate(connId, (w) => { w.readOnly = on; });
+    setSafety(connId, on ? "read-only" : "off");
 }
 
 export function setInTransaction(connId: string, on: boolean): void {
     mutate(connId, (w) => { w.inTransaction = on; });
+}
+
+export function dismissBanner(connId: string): void {
+    mutate(connId, (w) => { w.dismissedSafetyBanner = true; });
 }
 
 export function catalogTables(connId: string, tables: string[]): void {
