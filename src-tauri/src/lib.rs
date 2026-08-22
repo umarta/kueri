@@ -13,6 +13,7 @@ pub mod secrets;
 mod sql_classify;
 pub mod ssh {
     pub mod profile;
+    pub mod store;
 }
 pub mod tls;
 
@@ -78,6 +79,10 @@ pub fn run() {
             commands::refresh_schema,
             commands::write_text_file,
             commands::read_text_file,
+            commands::list_ssh_profiles,
+            commands::save_ssh_profile,
+            commands::delete_ssh_profile,
+            commands::list_ssh_profile_dependents,
             pgtools::pg_export,
             pgtools::pg_import,
             clients::detect_clients,
