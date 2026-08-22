@@ -70,6 +70,58 @@ pub fn rekey_keychain(old_id: &str, new_id: Uuid) -> AppResult<()> {
     Ok(())
 }
 
+pub fn migrate_if_needed(path: &Path) -> AppResult<Vec<ConnectionConfigV2>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(path).map_err(|e| AppError::Other(e.to_string()))?;
+    let parsed: Value = serde_json::from_str(&raw).unwrap_or_else(|_| Value::Array(Vec::new()));
+    let array = parsed.as_array().cloned().unwrap_or_default();
+
+    let needs_migration = array.iter().any(|rec| {
+        rec.as_object()
+            .and_then(|o| o.get("schema_version"))
+            .and_then(Value::as_u64)
+            .map(|v| v < 2)
+            .unwrap_or(true)
+    });
+
+    if !needs_migration {
+        let records: Vec<ConnectionConfigV2> = serde_json::from_value(Value::Array(array))
+            .map_err(|e| AppError::Other(format!("parse v2: {e}")))?;
+        return Ok(records);
+    }
+
+    // Backup before writing v2
+    let _backup_path = backup_v1_file(path)?;
+
+    let mut migrated: Vec<ConnectionConfigV2> = Vec::with_capacity(array.len());
+    for rec in array {
+        // Only migrate records that look like v1 (schema_version missing/<2)
+        let is_v1 = rec.as_object()
+            .and_then(|o| o.get("schema_version"))
+            .and_then(Value::as_u64)
+            .map(|v| v < 2)
+            .unwrap_or(true);
+        if is_v1 {
+            let old_id = rec.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+            let v2 = migrate_record(&rec)?;
+            let _ = rekey_keychain(&old_id, v2.id);
+            migrated.push(v2);
+        } else {
+            let v2: ConnectionConfigV2 = serde_json::from_value(rec)
+                .map_err(|e| AppError::Other(format!("mixed schema parse: {e}")))?;
+            migrated.push(v2);
+        }
+    }
+
+    let serialized = serde_json::to_string_pretty(&migrated)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    std::fs::write(path, serialized).map_err(|e| AppError::Other(e.to_string()))?;
+
+    Ok(migrated)
+}
+
 pub fn migrate_record(v1: &Value) -> AppResult<ConnectionConfigV2> {
     let obj = v1.as_object().ok_or_else(|| AppError::Other("record not an object".into()))?;
 
@@ -312,5 +364,58 @@ mod tests {
         let migrated = migrate_record(&v1).unwrap();
         assert_eq!(migrated.color.as_deref(), Some("prod"));
         assert!(migrated.tags.iter().any(|t| t == "production"));
+    }
+
+    #[test]
+    fn migrate_if_needed_returns_empty_when_file_missing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("connections.json");
+        let out = migrate_if_needed(&path).unwrap();
+        assert!(out.is_empty());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn migrate_if_needed_leaves_v2_alone() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("connections.json");
+        // Hand-write a v2 record (schema_version=2)
+        let v2 = json!([{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "schema_version": 2,
+            "name": "prod",
+            "kind": "postgres",
+            "host": "db",
+            "port": 5432,
+            "database": "app",
+            "user": "u",
+            "password": {"kind": "keychain"},
+            "safety": "confirm-destructive"
+        }]);
+        std::fs::write(&path, serde_json::to_string(&v2).unwrap()).unwrap();
+        let out = migrate_if_needed(&path).unwrap();
+        assert_eq!(out.len(), 1);
+        // No backup file created because no migration happened
+        let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().filter_map(Result::ok).collect();
+        assert_eq!(entries.len(), 1, "no backup expected");
+    }
+
+    #[test]
+    fn migrate_if_needed_migrates_v1_and_backs_up() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("connections.json");
+        let v1 = json!([v1_minimal()]);
+        std::fs::write(&path, serde_json::to_string(&v1).unwrap()).unwrap();
+
+        let out = migrate_if_needed(&path).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].schema_version, 2);
+
+        // Backup exists
+        assert!(dir.path().join("connections.v1.bak.json").exists());
+
+        // File is now v2
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("\"schema_version\""));
     }
 }
