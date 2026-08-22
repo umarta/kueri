@@ -73,6 +73,7 @@ pub fn run() {
             commands::rename_column,
             commands::change_column_type,
             commands::set_column_nullable,
+            commands::refresh_schema,
             commands::write_text_file,
             commands::read_text_file,
             pgtools::pg_export,

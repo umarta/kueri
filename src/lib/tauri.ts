@@ -100,4 +100,5 @@ export const api = {
     invoke<void>("secret_set", { id, password }),
   secretGet: (id: string) => invoke<string | null>("secret_get", { id }),
   secretDelete: (id: string) => invoke<void>("secret_delete", { id }),
+  refreshSchema: (id: string) => invoke<void>("refresh_schema", { id }),
 };
