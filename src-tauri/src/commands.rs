@@ -677,6 +677,27 @@ pub fn delete_ssh_profile(app: AppHandle, id: String) -> AppResult<()> {
     store.save(&profiles)
 }
 
+fn workspace_store(app: &AppHandle) -> AppResult<crate::workspace_persist::WorkspaceStore> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| AppError::Other(format!("config dir: {e}")))?;
+    Ok(crate::workspace_persist::WorkspaceStore::new(&dir))
+}
+
+#[tauri::command]
+pub async fn load_workspaces(app: AppHandle) -> AppResult<crate::workspace_persist::WorkspaceFile> {
+    workspace_store(&app)?.load()
+}
+
+#[tauri::command]
+pub async fn save_workspaces(
+    app: AppHandle,
+    file: crate::workspace_persist::WorkspaceFile,
+) -> AppResult<()> {
+    workspace_store(&app)?.save(&file)
+}
+
 #[cfg(test)]
 mod ssh_command_tests {
     use super::*;

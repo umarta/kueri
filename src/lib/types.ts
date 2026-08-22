@@ -259,3 +259,22 @@ export interface RowEdit {
   original: unknown[];
   updates: Record<string, string | null>; // column name → new value (null = SQL NULL)
 }
+
+// ─── Cross-launch workspace snapshot (KUE-006) ───────────────────────────────
+
+export type PersistedTab =
+  | { kind: "query"; id: string; title: string; sql: string }
+  | { kind: "table"; id: string; schema: string; table: string };
+
+export interface PersistedWorkspace {
+  connection_id: string;
+  active_schema: string;
+  focused_tab_id: string | null;
+  tabs: PersistedTab[];
+}
+
+export interface WorkspaceFile {
+  schema_version: number;
+  last_active_id: string | null;
+  workspaces: PersistedWorkspace[];
+}

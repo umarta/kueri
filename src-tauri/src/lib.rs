@@ -16,6 +16,7 @@ pub mod ssh {
     pub mod store;
 }
 pub mod tls;
+pub mod workspace_persist;
 
 use db::pool::AppState;
 
@@ -85,6 +86,8 @@ pub fn run() {
             commands::save_ssh_profile,
             commands::delete_ssh_profile,
             commands::list_ssh_profile_dependents,
+            commands::load_workspaces,
+            commands::save_workspaces,
             pgtools::pg_export,
             pgtools::pg_import,
             clients::detect_clients,
