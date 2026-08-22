@@ -7,6 +7,7 @@ mod persist;
 mod pgtools;
 mod migration;
 pub mod safety;
+mod sql_classify;
 pub mod secrets;
 pub mod ssh {
     pub mod profile;
