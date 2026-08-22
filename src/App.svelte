@@ -39,7 +39,7 @@
   import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
   import SafetyConfirm from "./components/SafetyConfirm.svelte";
   import { runQuerySafely, CancelledByUser, isSafetyRejected } from "./lib/safety/run";
-  import type { ConfirmReason } from "./lib/safety/labels";
+  import { safetyPrompt, showSafetyModal } from "./lib/safety/modal";
   import { get } from "svelte/store";
 
   let sidebarOpen = true;
@@ -61,32 +61,6 @@
   let schemaNewOpen = false;
   let schemaNewName = "";
 
-  // ── Safety confirmation modal ─────────────────────────────────────────────────
-  let safetyConfirmOpen = false;
-  let safetyConfirmStatement = "";
-  let safetyConfirmReason: ConfirmReason = "destructive-no-where";
-  let safetyConfirmResolver: ((ok: boolean) => void) | null = null;
-
-  function showSafetyModal(info: { statement: string; reason: ConfirmReason }): Promise<boolean> {
-    return new Promise((resolve) => {
-      safetyConfirmStatement = info.statement;
-      safetyConfirmReason = info.reason;
-      safetyConfirmOpen = true;
-      safetyConfirmResolver = resolve;
-    });
-  }
-
-  function safetyConfirmCancel() {
-    safetyConfirmResolver?.(false);
-    safetyConfirmOpen = false;
-    safetyConfirmResolver = null;
-  }
-
-  function safetyConfirmOk() {
-    safetyConfirmResolver?.(true);
-    safetyConfirmOpen = false;
-    safetyConfirmResolver = null;
-  }
 
   async function createSchemaAction() {
     if (!$activeConnectionId || !schemaNewName.trim()) return;
@@ -445,24 +419,10 @@
     sync(t);
   }
 
-  // UPDATE / DELETE with no WHERE — easy to fire by accident, hits every row.
-  function unsafeNoWhere(sql: string): boolean {
-    const s = sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim();
-    return /^(update|delete)\b/i.test(s) && !/\bwhere\b/i.test(s);
-  }
-
   async function runSql(t: QueryTab, sql: string) {
     const stmts = splitStatements(sql);
     if (!stmts.length) return;
     if ($readOnly && stmts.some((s) => !isReadStatement(s))) { showToast(false, blockedMsg); return; }
-    const unsafe = stmts.filter(unsafeNoWhere);
-    if (unsafe.length) {
-      const ok = await ask(
-        `${unsafe.length === 1 ? "This statement has" : `${unsafe.length} statements have`} no WHERE clause and will affect every row:\n\n${unsafe.map((s) => s.trim().slice(0, 120)).join("\n")}\n\nRun anyway?`,
-        { title: "Run without WHERE?", kind: "warning" },
-      );
-      if (!ok) return;
-    }
     t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync(t);
     // Single statement: keep the editable single-table path.
     if (stmts.length === 1) {
@@ -1448,13 +1408,15 @@
   <ExplainPlan root={explainPlan} sql={explainSql} on:close={() => (explainPlan = null)} />
 {/if}
 
-<SafetyConfirm
-  open={safetyConfirmOpen}
-  statement={safetyConfirmStatement}
-  reason={safetyConfirmReason}
-  on:cancel={safetyConfirmCancel}
-  on:confirm={safetyConfirmOk}
-/>
+{#if $safetyPrompt}
+  <SafetyConfirm
+    open={true}
+    statement={$safetyPrompt.statement}
+    reason={$safetyPrompt.reason}
+    on:cancel={() => { $safetyPrompt?.resolve(false); safetyPrompt.set(null); }}
+    on:confirm={() => { $safetyPrompt?.resolve(true); safetyPrompt.set(null); }}
+  />
+{/if}
 
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
