@@ -1,5 +1,7 @@
 //! Password source abstraction.
 
+pub mod onepassword;
+
 use async_trait::async_trait;
 use keyring::Entry;
 use secrecy::SecretString;
@@ -37,14 +39,12 @@ pub enum PasswordSource {
 
 /// Shared shape for CLI subprocess failures. Provider modules build one of these
 /// and hand it to [`map_cli_error`] to get a uniformly-shaped `AppError`.
-#[allow(dead_code)]
 pub(crate) enum CliErrorKind {
     NonZeroExit { stderr: String },
     Timeout,
     NotFound { bin: &'static str },
 }
 
-#[allow(dead_code)]
 pub(crate) fn map_cli_error(provider: &str, hint: &str, kind: CliErrorKind) -> AppError {
     match kind {
         CliErrorKind::Timeout => {
@@ -86,9 +86,12 @@ pub async fn resolve(source: &PasswordSource, conn_id: Uuid) -> AppResult<Secret
             Ok(p) => Ok(SecretString::new(p.into())),
             Err(_) => Err(AppError::Other(format!("env var {name} not set"))),
         },
-        PasswordSource::OnePassword { .. }
-        | PasswordSource::Vault { .. }
-        | PasswordSource::AwsSm { .. } => Err(AppError::Other(
+        PasswordSource::OnePassword { item, field } => {
+            onepassword::OnePasswordResolver { item, field }
+                .resolve()
+                .await
+        }
+        PasswordSource::Vault { .. } | PasswordSource::AwsSm { .. } => Err(AppError::Other(
             "external secret providers ship in Phase 5".into(),
         )),
     }
