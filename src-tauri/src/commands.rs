@@ -302,20 +302,30 @@ pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
 pub async fn execute_query_confirmed(
     state: State<'_, AppState>,
     token: String,
+    query_id: String,
 ) -> AppResult<QueryResult> {
     let (uuid, sql) = state.confirm_tokens.consume(&token)?;
 
     // No pre-flight — the token IS the authorization (issued by execute_query's classifier).
     let driver = state.get(uuid)?;
     let effects = crate::sql_classify::classify(&sql);
-    let result = driver.run_query(&sql).await;
+    // Run on a task we can abort, so `cancel_query` can stop a long-running query.
+    let task = tokio::spawn(async move { driver.run_query(&sql).await });
+    state.register_query(query_id.clone(), task.abort_handle());
+    let res = task.await;
+    state.finish_query(&query_id);
+    // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
     if effects
         .iter()
         .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl))
     {
         state.schema_cache.invalidate(uuid);
     }
-    result
+    match res {
+        Ok(inner) => inner,
+        Err(e) if e.is_cancelled() => Err(AppError::Other("Query cancelled.".into())),
+        Err(e) => Err(AppError::Other(format!("query task failed: {e}"))),
+    }
 }
 
 #[tauri::command]
