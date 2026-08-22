@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import Modal from "./Modal.svelte";
   import { api } from "../lib/tauri";
   import { upsertConnection, resolvePassword } from "../lib/stores/connection";
   import { dbKind, STATUS_COLORS } from "../lib/dbKinds";
-  import type { ConnectionConfig, StatusColor, TlsMode } from "../lib/types";
+  import type { ConnectionConfig, StatusColor, TlsMode, SshProfile, SshRef, SshAuth } from "../lib/types";
 
   // Initial config — kind is preset by the picker; full config when editing.
   export let config: ConnectionConfig;
@@ -34,11 +34,73 @@
   let keyPath = config.tls?.key_path ?? "";
 
   // SSH local state — derived from config.ssh on mount.
-  let enableSsh = config.ssh != null;
   let sshHost = (config.ssh?.kind === "inline" ? config.ssh.value.host : "") ?? "";
   let sshPort = (config.ssh?.kind === "inline" ? config.ssh.value.port : 22) ?? 22;
   let sshUser = (config.ssh?.kind === "inline" ? config.ssh.value.user : "") ?? "";
   let sshKey = (config.ssh?.kind === "inline" && config.ssh.value.auth.kind === "key-file" ? config.ssh.value.auth.path : "") ?? "";
+
+  // Three-state SSH radio: Off / Use saved profile / Inline.
+  type SshMode = "off" | "profile" | "inline";
+
+  function deriveSshMode(ssh: SshRef | null | undefined): SshMode {
+    if (!ssh) return "off";
+    return ssh.kind === "profile" ? "profile" : "inline";
+  }
+
+  let sshMode: SshMode = deriveSshMode(config.ssh);
+  let selectedProfileId: string | null =
+    config.ssh?.kind === "profile" ? config.ssh.value : null;
+  let existingInlineId: string | null =
+    config.ssh?.kind === "inline" ? config.ssh.value.id : null;
+  let profiles: SshProfile[] = [];
+
+  onMount(async () => {
+    try {
+      profiles = await api.listSshProfiles();
+    } catch {
+      profiles = [];
+    }
+  });
+
+  function assembleSsh(): SshRef | null {
+    if (sshMode === "off") return null;
+    if (sshMode === "profile" && selectedProfileId) {
+      return { kind: "profile", value: selectedProfileId };
+    }
+    if (sshMode === "inline") {
+      const auth: SshAuth = sshKey
+        ? { kind: "key-file", path: sshKey, passphrase: null }
+        : { kind: "agent" };
+      return {
+        kind: "inline",
+        value: {
+          id: existingInlineId ?? crypto.randomUUID(),
+          name: "inline",
+          host: sshHost.trim(),
+          port: sshPort || 22,
+          user: sshUser.trim(),
+          auth,
+          jump: null,
+        },
+      };
+    }
+    return null;
+  }
+
+  function openSshProfilesInSettings() {
+    // Fallback: user has to click Settings themselves and pick SSH Profiles.
+    // A future iteration wires this to a Settings-open event with tab arg.
+    alert("Open Settings → SSH Profiles to manage profiles.");
+  }
+
+  async function browseSshKey() {
+    try {
+      const picked = await open({ multiple: false, directory: false });
+      if (typeof picked === "string") sshKey = picked;
+    } catch {
+      // silently ignore
+    }
+  }
 
   // Ensure safety has a default when not set (e.g. older persisted configs).
   $: if (config && !config.safety) config.safety = "confirm-destructive";
@@ -58,22 +120,7 @@
             key_path: keyPath || null,
           }
         : null,
-      ssh: enableSsh
-        ? {
-            kind: "inline",
-            value: {
-              id: (config.ssh?.kind === "inline" ? config.ssh.value.id : null) ?? crypto.randomUUID(),
-              name: "form",
-              host: sshHost,
-              port: sshPort || 22,
-              user: sshUser,
-              auth: sshKey
-                ? { kind: "key-file", path: sshKey }
-                : { kind: "agent" },
-              jump: null,
-            },
-          }
-        : null,
+      ssh: assembleSsh(),
     };
   }
 
@@ -256,29 +303,55 @@
         {/if}
       {/if}
 
-      <label class="row check">
-        <input type="checkbox" bind:checked={enableSsh} />
-        <span>Connect via SSH tunnel</span>
-      </label>
-      {#if enableSsh}
-        <label class="row">
-          <span class="lbl">SSH host</span>
-          <input class="field" bind:value={sshHost} placeholder="bastion.example.com" />
-        </label>
-        <label class="row">
-          <span class="lbl">SSH port</span>
-          <input class="field port" type="number" bind:value={sshPort} placeholder="22" />
-        </label>
-        <label class="row">
-          <span class="lbl">SSH user</span>
-          <input class="field" bind:value={sshUser} placeholder="ubuntu" />
-        </label>
-        <label class="row">
-          <span class="lbl">Private key</span>
-          <input class="field" bind:value={sshKey} placeholder="~/.ssh/id_ed25519 (or blank for agent)" />
-        </label>
-        <p class="ssh-note">Key/agent auth only. The DB host/port above are reached through the tunnel.</p>
-      {/if}
+      <div class="ssh-section">
+        <div class="ssh-mode">
+          <label class="ssh-radio"><input type="radio" bind:group={sshMode} value="off" /> Off</label>
+          {#if profiles.length > 0}
+            <label class="ssh-radio"><input type="radio" bind:group={sshMode} value="profile" /> Use saved profile</label>
+          {/if}
+          <label class="ssh-radio"><input type="radio" bind:group={sshMode} value="inline" /> Configure inline</label>
+        </div>
+
+        {#if sshMode === "profile"}
+          <label class="row">
+            <span class="lbl">Profile</span>
+            <select class="field" bind:value={selectedProfileId}>
+              <option value={null}>— select a profile —</option>
+              {#each profiles as p (p.id)}
+                <option value={p.id}>{p.name} ({p.user}@{p.host}:{p.port})</option>
+              {/each}
+            </select>
+          </label>
+          <p class="ssh-note">
+            <button type="button" class="link-btn" on:click={openSshProfilesInSettings}>
+              Manage profiles in Settings…
+            </button>
+          </p>
+        {/if}
+
+        {#if sshMode === "inline"}
+          <label class="row">
+            <span class="lbl">SSH host</span>
+            <input class="field" bind:value={sshHost} placeholder="bastion.example.com" />
+          </label>
+          <label class="row">
+            <span class="lbl">SSH port</span>
+            <input class="field port" type="number" bind:value={sshPort} placeholder="22" />
+          </label>
+          <label class="row">
+            <span class="lbl">SSH user</span>
+            <input class="field" bind:value={sshUser} placeholder="ubuntu" />
+          </label>
+          <div class="row">
+            <span class="lbl">Private key</span>
+            <div class="filepath-row">
+              <input class="field" bind:value={sshKey} placeholder="/Users/me/.ssh/id_rsa (blank = agent)" />
+              <button type="button" class="btn btn-icon" on:click={browseSshKey}>Browse…</button>
+            </div>
+          </div>
+          <p class="ssh-note">Key/agent auth only. The DB host/port above are reached through the tunnel.</p>
+        {/if}
+      </div>
     {/if}
 
     {#if error}
@@ -333,6 +406,12 @@
 
   .hint { margin: -2px 0 0; padding-left: calc(92px + var(--s-5)); font-size: 11px; color: var(--faint); }
 
+  .ssh-section { display: flex; flex-direction: column; gap: var(--s-4); }
+  .ssh-mode { display: flex; align-items: center; gap: var(--s-4); }
+  .ssh-radio { display: flex; align-items: center; gap: var(--s-2); font-size: 12.5px; color: var(--ink-soft); cursor: pointer; }
+  .ssh-radio input { margin: 0; accent-color: var(--accent); }
+  .link-btn { background: none; border: none; padding: 0; color: var(--accent); font-size: 11px; cursor: pointer; text-decoration: underline; }
+  .link-btn:hover { opacity: 0.8; }
   .ssh-note { margin: calc(-1 * var(--s-2)) 0 0; font-size: 11px; color: var(--faint); line-height: 1.45; }
   .banner {
     font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
