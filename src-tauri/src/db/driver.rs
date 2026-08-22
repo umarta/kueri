@@ -5,18 +5,18 @@ use serde_json::Value;
 use crate::db::ddl::{self, ColumnDef, Dialect};
 use crate::error::{AppError, AppResult};
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SchemaInfo {
     pub name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TableInfo {
     pub name: String,
     pub kind: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,

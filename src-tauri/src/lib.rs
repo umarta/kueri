@@ -8,6 +8,7 @@ mod pgtools;
 mod migration;
 pub mod safety;
 mod sql_classify;
+mod schema_cache;
 pub mod secrets;
 pub mod ssh {
     pub mod profile;
