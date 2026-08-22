@@ -2,7 +2,7 @@
   import { onMount, createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
   import { activeConnectionId, activeConnection } from "../lib/stores/connection";
-  import { catalogTables, readOnly, setActiveSchema } from "../lib/stores/workspaces";
+  import { catalogTables, readOnly, setActiveSchema, activeSchema as activeSchemaStore } from "../lib/stores/workspaces";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
   import { queryLog, clearLog, removeLog, type LogEntry } from "../lib/stores/log";
@@ -157,19 +157,26 @@
     loadError = null;
     try {
       schemas = await api.listSchemas($activeConnectionId);
-      activeSchema = schemas.find((s) => s.name === "public")?.name ?? schemas[0]?.name ?? "";
-      await loadTables();
-      // If the default schema is empty but another has tables, jump there
-      // (e.g. tables live in "kame", not "public").
-      if (tables.length === 0 && schemas.length > 1) {
-        for (const s of schemas) {
-          if (s.name === activeSchema) continue;
-          const t = await api.listTables($activeConnectionId, s.name);
-          if (t.length) {
-            activeSchema = s.name;
-            tables = t;
-            if ($activeConnectionId) catalogTables($activeConnectionId, t.map((x) => x.name));
-            break;
+      const saved = $activeSchemaStore;
+      const restored = saved && schemas.some((s) => s.name === saved);
+      if (restored) {
+        activeSchema = saved;
+        await loadTables();
+      } else {
+        activeSchema = schemas.find((s) => s.name === "public")?.name ?? schemas[0]?.name ?? "";
+        await loadTables();
+        // First-time load: if the default schema is empty but another has tables,
+        // jump there (e.g. tables live in "kame", not "public").
+        if (tables.length === 0 && schemas.length > 1) {
+          for (const s of schemas) {
+            if (s.name === activeSchema) continue;
+            const t = await api.listTables($activeConnectionId, s.name);
+            if (t.length) {
+              activeSchema = s.name;
+              tables = t;
+              if ($activeConnectionId) catalogTables($activeConnectionId, t.map((x) => x.name));
+              break;
+            }
           }
         }
       }
