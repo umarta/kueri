@@ -11,6 +11,7 @@ import type {
   RoleInfo,
   ClientTool,
   SafetyLevel,
+  SshProfile,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -104,4 +105,10 @@ export const api = {
   secretGet: (id: string) => invoke<string | null>("secret_get", { id }),
   secretDelete: (id: string) => invoke<void>("secret_delete", { id }),
   refreshSchema: (id: string) => invoke<void>("refresh_schema", { id }),
+
+  // SSH profile management.
+  listSshProfiles: () => invoke<SshProfile[]>("list_ssh_profiles"),
+  saveSshProfile: (profile: SshProfile) => invoke<void>("save_ssh_profile", { profile }),
+  deleteSshProfile: (id: string) => invoke<void>("delete_ssh_profile", { id }),
+  listSshProfileDependents: (id: string) => invoke<string[]>("list_ssh_profile_dependents", { id }),
 };
