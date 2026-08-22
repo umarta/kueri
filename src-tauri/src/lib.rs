@@ -13,6 +13,7 @@ pub mod secrets;
 mod sql_classify;
 pub mod ssh {
     pub mod profile;
+    pub mod store;
 }
 pub mod tls;
 
