@@ -12,6 +12,7 @@ import type {
   ClientTool,
   SafetyLevel,
   SshProfile,
+  WorkspaceFile,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -113,4 +114,8 @@ export const api = {
   saveSshProfile: (profile: SshProfile) => invoke<void>("save_ssh_profile", { profile }),
   deleteSshProfile: (id: string) => invoke<void>("delete_ssh_profile", { id }),
   listSshProfileDependents: (id: string) => invoke<string[]>("list_ssh_profile_dependents", { id }),
+
+  // Workspace snapshot persistence (KUE-006).
+  loadWorkspaces: () => invoke<WorkspaceFile>("load_workspaces"),
+  saveWorkspaces: (file: WorkspaceFile) => invoke<void>("save_workspaces", { file }),
 };
