@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use secrecy::ExposeSecret;
 use uuid::Uuid;
 
 use crate::safety::SafetyLevel;
 use crate::secrets::PasswordSource;
 use crate::ssh::profile::SshRef;
-use crate::tls::TlsConfig;
+use crate::tls::{TlsConfig, TlsMode};
 use super::DbKind;
 
 pub const SCHEMA_VERSION: u32 = 2;
@@ -38,24 +39,81 @@ pub struct ConnectionConfigV2 {
 /// Removed at the end of Task 8.
 pub type ConnectionConfig = ConnectionConfigV2;
 
-// TODO(Task 7): Rewrite URL builders to use the new field shapes (TlsConfig, PasswordSource).
-// Stub bodies are placeholders so downstream callers (postgres.rs / mysql.rs / sqlite.rs)
-// continue to compile. Task 7 replaces these with real implementations.
 impl ConnectionConfigV2 {
-    pub fn pg_url(&self) -> String {
-        unimplemented!("TODO(Task 7): build postgres URL from TlsConfig + PasswordSource")
+    pub fn pg_url(&self, secret: &secrecy::SecretString) -> String {
+        let sslmode = self.tls
+            .as_ref()
+            .map(|t| pg_mode_str(&t.mode))
+            .unwrap_or("prefer");
+        let mut url = format!(
+            "postgres://{}:{}@{}:{}/{}?sslmode={}",
+            enc(&self.user),
+            enc(secret.expose_secret()),
+            self.host,
+            self.port,
+            self.database,
+            sslmode
+        );
+        if let Some(tls) = &self.tls {
+            if let Some(ca) = &tls.ca_path {
+                url.push_str(&format!("&sslrootcert={}", enc(&ca.to_string_lossy())));
+            }
+            if let Some(cert) = &tls.cert_path {
+                url.push_str(&format!("&sslcert={}", enc(&cert.to_string_lossy())));
+            }
+            if let Some(key) = &tls.key_path {
+                url.push_str(&format!("&sslkey={}", enc(&key.to_string_lossy())));
+            }
+        }
+        url
     }
 
-    pub fn mysql_url(&self) -> String {
-        unimplemented!("TODO(Task 7): build mysql URL from TlsConfig + PasswordSource")
+    pub fn mysql_url(&self, secret: &secrecy::SecretString) -> String {
+        let mode = self.tls
+            .as_ref()
+            .map(|t| mysql_mode_str(&t.mode))
+            .unwrap_or("PREFERRED");
+        let mut url = format!(
+            "mysql://{}:{}@{}:{}/{}?ssl-mode={}",
+            enc(&self.user),
+            enc(secret.expose_secret()),
+            self.host,
+            self.port,
+            self.database,
+            mode
+        );
+        if let Some(tls) = &self.tls {
+            if let Some(ca) = &tls.ca_path {
+                url.push_str(&format!("&ssl-ca={}", enc(&ca.to_string_lossy())));
+            }
+        }
+        url
     }
 
     pub fn sqlite_url(&self) -> String {
-        let path = self
-            .file_path
-            .clone()
-            .unwrap_or_else(|| self.database.clone());
+        let path = self.file_path.clone().unwrap_or_else(|| self.database.clone());
         format!("sqlite://{}", path)
+    }
+}
+
+fn pg_mode_str(m: &TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disable => "disable",
+        TlsMode::Allow => "allow",
+        TlsMode::Prefer => "prefer",
+        TlsMode::Require => "require",
+        TlsMode::VerifyCa => "verify-ca",
+        TlsMode::VerifyFull => "verify-full",
+    }
+}
+
+fn mysql_mode_str(m: &TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disable => "DISABLED",
+        TlsMode::Allow | TlsMode::Prefer => "PREFERRED",
+        TlsMode::Require => "REQUIRED",
+        TlsMode::VerifyCa => "VERIFY_CA",
+        TlsMode::VerifyFull => "VERIFY_IDENTITY",
     }
 }
 
