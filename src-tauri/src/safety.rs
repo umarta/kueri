@@ -1,7 +1,7 @@
 //! Safety level per connection (Phase 1: type only; enforcement in Phase 3).
 
-use serde::{Deserialize, Serialize};
 use crate::sql_classify::SqlEffect;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -32,8 +32,14 @@ pub enum RejectReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SafetyDecision {
     Allow,
-    NeedsConfirmation { reason: ConfirmReason, statement: String },
-    Reject { reason: RejectReason, statement: String },
+    NeedsConfirmation {
+        reason: ConfirmReason,
+        statement: String,
+    },
+    Reject {
+        reason: RejectReason,
+        statement: String,
+    },
 }
 
 impl SafetyLevel {
@@ -121,13 +127,20 @@ mod tests {
     fn confirm_destructive_triggers_only_on_destructive_no_where() {
         // Write with WHERE — allow
         assert!(matches!(
-            SafetyLevel::ConfirmDestructive.decide(SqlEffect::Write, true, "DELETE FROM t WHERE id=1"),
+            SafetyLevel::ConfirmDestructive.decide(
+                SqlEffect::Write,
+                true,
+                "DELETE FROM t WHERE id=1"
+            ),
             SafetyDecision::Allow
         ));
         // Write without WHERE — confirm
         assert!(matches!(
             SafetyLevel::ConfirmDestructive.decide(SqlEffect::Write, false, "DELETE FROM t"),
-            SafetyDecision::NeedsConfirmation { reason: ConfirmReason::DestructiveNoWhere, .. }
+            SafetyDecision::NeedsConfirmation {
+                reason: ConfirmReason::DestructiveNoWhere,
+                ..
+            }
         ));
         // DDL — allow at this level
         assert!(matches!(
@@ -140,11 +153,17 @@ mod tests {
     fn confirm_writes_triggers_on_any_write_regardless_of_where() {
         assert!(matches!(
             SafetyLevel::ConfirmWrites.decide(SqlEffect::Write, true, "DELETE FROM t WHERE id=1"),
-            SafetyDecision::NeedsConfirmation { reason: ConfirmReason::Write, .. }
+            SafetyDecision::NeedsConfirmation {
+                reason: ConfirmReason::Write,
+                ..
+            }
         ));
         assert!(matches!(
             SafetyLevel::ConfirmWrites.decide(SqlEffect::Write, false, "DELETE FROM t"),
-            SafetyDecision::NeedsConfirmation { reason: ConfirmReason::DestructiveNoWhere, .. }
+            SafetyDecision::NeedsConfirmation {
+                reason: ConfirmReason::DestructiveNoWhere,
+                ..
+            }
         ));
         // DDL passes through (still confirmed at Ddl level, not Writes)
         assert!(matches!(
@@ -162,11 +181,17 @@ mod tests {
         // ConfirmDdl stacks: it confirms Writes AND Ddl
         assert!(matches!(
             SafetyLevel::ConfirmDdl.decide(SqlEffect::Ddl, false, "CREATE TABLE t (x int)"),
-            SafetyDecision::NeedsConfirmation { reason: ConfirmReason::Ddl, .. }
+            SafetyDecision::NeedsConfirmation {
+                reason: ConfirmReason::Ddl,
+                ..
+            }
         ));
         assert!(matches!(
             SafetyLevel::ConfirmDdl.decide(SqlEffect::Write, true, "INSERT INTO t VALUES (1)"),
-            SafetyDecision::NeedsConfirmation { reason: ConfirmReason::Write, .. }
+            SafetyDecision::NeedsConfirmation {
+                reason: ConfirmReason::Write,
+                ..
+            }
         ));
         assert!(matches!(
             SafetyLevel::ConfirmDdl.decide(SqlEffect::Read, false, "SELECT 1"),
@@ -178,11 +203,17 @@ mod tests {
     fn read_only_rejects_writes_and_ddl() {
         assert!(matches!(
             SafetyLevel::ReadOnly.decide(SqlEffect::Write, true, "INSERT INTO t VALUES (1)"),
-            SafetyDecision::Reject { reason: RejectReason::ReadOnlyMode, .. }
+            SafetyDecision::Reject {
+                reason: RejectReason::ReadOnlyMode,
+                ..
+            }
         ));
         assert!(matches!(
             SafetyLevel::ReadOnly.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
-            SafetyDecision::Reject { reason: RejectReason::ReadOnlyMode, .. }
+            SafetyDecision::Reject {
+                reason: RejectReason::ReadOnlyMode,
+                ..
+            }
         ));
         // Read passes
         assert!(matches!(

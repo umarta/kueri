@@ -23,7 +23,9 @@ struct PendingConfirm {
 
 impl ConfirmTokenStore {
     pub fn new() -> Self {
-        Self { tokens: Mutex::new(HashMap::new()) }
+        Self {
+            tokens: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn issue(&self, conn_id: Uuid, sql: String) -> String {
@@ -31,18 +33,22 @@ impl ConfirmTokenStore {
         let mut lock = self.tokens.lock().unwrap();
         // Opportunistic GC of expired entries
         lock.retain(|_, p| p.issued_at.elapsed() < TOKEN_TTL);
-        lock.insert(token.clone(), PendingConfirm {
-            connection_id: conn_id,
-            sql,
-            issued_at: Instant::now(),
-        });
+        lock.insert(
+            token.clone(),
+            PendingConfirm {
+                connection_id: conn_id,
+                sql,
+                issued_at: Instant::now(),
+            },
+        );
         token
     }
 
     pub fn consume(&self, token: &str) -> AppResult<(Uuid, String)> {
         let mut lock = self.tokens.lock().unwrap();
-        let entry = lock.remove(token).ok_or_else(||
-            AppError::Other("confirmation token invalid or already used".into()))?;
+        let entry = lock
+            .remove(token)
+            .ok_or_else(|| AppError::Other("confirmation token invalid or already used".into()))?;
         if entry.issued_at.elapsed() > TOKEN_TTL {
             return Err(AppError::Other("confirmation token expired".into()));
         }

@@ -78,7 +78,8 @@ pub fn has_where_clause(sql: &str) -> bool {
     while i + needle.len() <= bytes.len() {
         if &bytes[i..i + needle.len()] == needle {
             let before_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
-            let after_ok = i + needle.len() == bytes.len() || !is_ident_byte(bytes[i + needle.len()]);
+            let after_ok =
+                i + needle.len() == bytes.len() || !is_ident_byte(bytes[i + needle.len()]);
             if before_ok && after_ok {
                 return true;
             }
@@ -282,7 +283,9 @@ mod tests {
     #[test]
     fn has_where_detects_where_after_subquery() {
         // The outer WHERE is what matters
-        assert!(has_where_clause("UPDATE t SET x = (SELECT max(y) FROM u WHERE y > 0) WHERE t.id = 1"));
+        assert!(has_where_clause(
+            "UPDATE t SET x = (SELECT max(y) FROM u WHERE y > 0) WHERE t.id = 1"
+        ));
     }
 
     #[test]
