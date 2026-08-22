@@ -15,14 +15,6 @@ export interface Workspace {
 }
 export const workspaces = writable<Workspace[]>([]);
 
-/** The schema currently selected in the sidebar — used to resolve unqualified
- *  table names in query-tab SQL (e.g. `SELECT * FROM orders`). */
-export const activeSchema = writable<string>("");
-
-/** Read-only / safe mode for the active connection — blocks writes & DDL.
- *  Defaults on for production-tagged connections. */
-export const readOnly = writable<boolean>(false);
-
 /** A statement is "read-only" if it can't modify data or schema. */
 export function isReadStatement(sql: string): boolean {
   const s = sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim().toLowerCase();
@@ -32,38 +24,6 @@ export function isReadStatement(sql: string): boolean {
 /** Whether a connection should start in read-only mode (production safety). */
 export function shouldStartReadOnly(color?: string, tag?: string): boolean {
   return color === "prod" || /prod/i.test(tag ?? "");
-}
-
-/**
- * Schema catalog for editor autocomplete: table name → known column names.
- * Populated cheaply as the user browses; reset on disconnect.
- */
-export const schemaCatalog = writable<Record<string, string[]>>({});
-
-export function catalogTables(tables: string[]) {
-  schemaCatalog.update((cat) => {
-    const next = { ...cat };
-    for (const t of tables) if (!next[t]) next[t] = [];
-    return next;
-  });
-}
-
-export function catalogColumns(table: string, columns: string[]) {
-  if (!table || columns.length === 0) return;
-  schemaCatalog.update((cat) => ({ ...cat, [table]: columns }));
-}
-
-// ── Manual transactions ───────────────────────────────────────────────────────
-// Connection ids that currently have an open BEGIN…COMMIT/ROLLBACK transaction.
-export const inTransaction = writable<Set<string>>(new Set());
-
-export function setInTransaction(id: string, on: boolean) {
-  inTransaction.update((s) => {
-    const next = new Set(s);
-    if (on) next.add(id);
-    else next.delete(id);
-    return next;
-  });
 }
 
 // ── Saved connections ─────────────────────────────────────────────────────────
