@@ -95,7 +95,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let store = SshProfileStore::new(dir.path());
         let profile = sample_profile();
-        store.save(&[profile.clone()]).unwrap();
+        store.save(std::slice::from_ref(&profile)).unwrap();
         let loaded = store.load().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, profile.id);
