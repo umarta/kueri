@@ -2,18 +2,25 @@
   import { createEventDispatcher } from "svelte";
   import { dbKind, statusVar } from "../lib/dbKinds";
   import type { Workspace } from "../lib/stores/connection";
+  import { workspaceStates } from "../lib/stores/workspaces";
+  import { railColor } from "../lib/safety/labels";
 
   export let workspaces: Workspace[] = [];
   export let activeId: string | null = null;
 
   const dispatch = createEventDispatcher<{ switch: string; add: void; close: string }>();
+
+  function itemColor(id: string): string {
+    const ws = $workspaceStates.get(id);
+    return railColor(ws?.safety ?? "off");
+  }
 </script>
 
 <nav class="rail" aria-label="Connections">
   <div class="items">
     {#each workspaces as w (w.id)}
       {@const meta = dbKind(w.config.kind)}
-      <div class="slot" class:active={w.id === activeId}>
+      <div class="slot" class:active={w.id === activeId} style="--rail-color: {itemColor(w.id)}">
         <button
           class="ws"
           title={`${w.config.name}${w.config.database ? " · " + w.config.database : ""}`}
@@ -49,7 +56,7 @@
 
   .items { display: flex; flex-direction: column; align-items: stretch; gap: var(--s-1); width: 100%; }
 
-  .slot { position: relative; width: 100%; }
+  .slot { position: relative; width: 100%; border-left: 3px solid var(--rail-color, transparent); }
   .ws {
     width: 100%; display: flex; flex-direction: column; align-items: center; gap: 3px;
     padding: var(--s-2) 2px; border-radius: var(--r-md); color: var(--muted);

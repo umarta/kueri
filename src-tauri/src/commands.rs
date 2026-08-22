@@ -247,9 +247,33 @@ pub async fn execute_query(
     id: String,
     sql: String,
     query_id: String,
+    safety: crate::safety::SafetyLevel,
 ) -> AppResult<QueryResult> {
     let uuid =
         Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+
+    // Pre-flight: classify each statement, take the strictest decision.
+    for stmt in crate::sql_classify::split_statements(&sql) {
+        let effect = crate::sql_classify::classify_one(&stmt);
+        let has_where = matches!(effect, crate::sql_classify::SqlEffect::Write)
+            && crate::sql_classify::has_where_clause(&stmt);
+        match safety.decide(effect, has_where, &stmt) {
+            crate::safety::SafetyDecision::Allow => continue,
+            crate::safety::SafetyDecision::NeedsConfirmation { reason, statement } => {
+                let token = state.confirm_tokens.issue(uuid, sql.clone());
+                return Err(AppError::NeedsConfirmation {
+                    token,
+                    statement,
+                    reason,
+                });
+            }
+            crate::safety::SafetyDecision::Reject { reason, statement } => {
+                return Err(AppError::SafetyRejected { statement, reason });
+            }
+        }
+    }
+
+    // Existing execute path — unchanged from KUE-002 (schema-cache invalidation on DDL).
     let driver = state.get(uuid)?;
     // Classify the SQL to detect DDL statements.
     let effects = classify(&sql);
@@ -272,6 +296,36 @@ pub async fn execute_query(
 #[tauri::command]
 pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
     state.cancel(&query_id);
+}
+
+#[tauri::command]
+pub async fn execute_query_confirmed(
+    state: State<'_, AppState>,
+    token: String,
+    query_id: String,
+) -> AppResult<QueryResult> {
+    let (uuid, sql) = state.confirm_tokens.consume(&token)?;
+
+    // No pre-flight — the token IS the authorization (issued by execute_query's classifier).
+    let driver = state.get(uuid)?;
+    let effects = crate::sql_classify::classify(&sql);
+    // Run on a task we can abort, so `cancel_query` can stop a long-running query.
+    let task = tokio::spawn(async move { driver.run_query(&sql).await });
+    state.register_query(query_id.clone(), task.abort_handle());
+    let res = task.await;
+    state.finish_query(&query_id);
+    // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
+    if effects
+        .iter()
+        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl))
+    {
+        state.schema_cache.invalidate(uuid);
+    }
+    match res {
+        Ok(inner) => inner,
+        Err(e) if e.is_cancelled() => Err(AppError::Other("Query cancelled.".into())),
+        Err(e) => Err(AppError::Other(format!("query task failed: {e}"))),
+    }
 }
 
 #[tauri::command]

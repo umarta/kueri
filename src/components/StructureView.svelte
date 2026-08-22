@@ -1,8 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { get } from "svelte/store";
   import { api } from "../lib/tauri";
   import { typeOptions, alterTypeOptions, supportsColumnAlter, type ColumnDraft } from "../lib/ddl";
-  import { readOnly } from "../lib/stores/workspaces";
+  import { readOnly, currentWorkspace } from "../lib/stores/workspaces";
+  import { runQuerySafely, CancelledByUser, isSafetyRejected } from "../lib/safety/run";
+  import { showSafetyModal } from "../lib/safety/modal";
   import type { ColumnInfo, DbKind, IndexInfo, ForeignKey } from "../lib/types";
 
   export let columns: ColumnInfo[] = [];
@@ -38,10 +41,17 @@
     if (!connectionId || !viewDef.trim() || defSaving) return;
     defSaving = true;
     defErr = "";
+    const safety = get(currentWorkspace)?.safety ?? "off";
     try {
-      await api.executeQuery(connectionId, viewDef, `viewdef-${defNonce++}`);
+      await runQuerySafely(connectionId, viewDef, safety, showSafetyModal, `viewdef-${defNonce++}`);
       dispatch("changed");
     } catch (e) {
+      if (e instanceof CancelledByUser) { defSaving = false; return; }
+      if (isSafetyRejected(e)) {
+        defErr = (e as { message?: string })?.message ?? String(e);
+        defSaving = false;
+        return;
+      }
       defErr = (e as { message?: string })?.message ?? String(e);
     } finally {
       defSaving = false;

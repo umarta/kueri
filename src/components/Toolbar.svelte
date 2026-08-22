@@ -2,6 +2,8 @@
   import { createEventDispatcher } from "svelte";
   import { activeConnection } from "../lib/stores/connection";
   import { dbKind, statusVar } from "../lib/dbKinds";
+  import type { SafetyLevel } from "../lib/types";
+  import { humanLabel } from "../lib/safety/labels";
 
   export let sidebarOpen = true;
   export let logOpen = false;
@@ -9,6 +11,8 @@
   export let readOnly = false;
   export let inTxn = false;
   export let txnBusy = false;
+  export let safety: SafetyLevel = "off";        // live safety level
+  export let configSafety: SafetyLevel = "off";  // persistent default from connection config
 
   const dispatch = createEventDispatcher<{
     disconnect: void;
@@ -69,7 +73,9 @@
     <button
       class="tbtn lock"
       class:locked={readOnly}
-      title={readOnly ? "Read-only mode on — click to allow writes" : "Writes allowed — click for read-only mode"}
+      title={readOnly
+        ? `Safety: read-only (click to restore to ${humanLabel(configSafety)})`
+        : `Safety: ${humanLabel(safety)} (click for read-only)`}
       aria-label="Toggle read-only mode"
       on:click={() => dispatch("toggleReadOnly")}
     >

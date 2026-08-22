@@ -10,6 +10,7 @@ import type {
   ProcessInfo,
   RoleInfo,
   ClientTool,
+  SafetyLevel,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
 
@@ -42,8 +43,10 @@ export const api = {
     invoke<void>("add_foreign_key", { id, schema, table, column, refTable, refColumn, name, validate }),
   primaryKeys: (id: string, schema: string, table: string) =>
     invoke<string[]>("primary_keys", { id, schema, table }),
-  executeQuery: (id: string, sql: string, queryId: string) =>
-    invoke<QueryResult>("execute_query", { id, sql, queryId }),
+  executeQuery: (id: string, sql: string, queryId: string, safety: SafetyLevel) =>
+    invoke<QueryResult>("execute_query", { id, sql, queryId, safety }),
+  executeQueryConfirmed: (token: string, queryId: string) =>
+    invoke<QueryResult>("execute_query_confirmed", { token, queryId }),
   cancelQuery: (queryId: string) => invoke<void>("cancel_query", { queryId }),
   beginTxn: (id: string) => invoke<void>("begin_txn", { id }),
   commitTxn: (id: string) => invoke<void>("commit_txn", { id }),

@@ -24,19 +24,24 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, workspaces,
-    isReadStatement, shouldStartReadOnly,
+    isReadStatement,
   } from "./lib/stores/connection";
   import {
-    workspaceStates,
+    workspaceStates, currentWorkspace,
     schemaCatalog, activeSchema, readOnly, inTransaction,
     ensureWorkspace, dropWorkspace,
-    setReadOnly, setInTransaction,
+    setSafety, setInTransaction, dismissBanner,
     catalogColumns,
     addTab, removeTab, updateTab, focusTab,
   } from "./lib/stores/workspaces";
   import { api } from "./lib/tauri";
   import { logSql, logActivity } from "./lib/stores/log";
-  import type { ConnectionConfig, RowEdit, QueryTab } from "./lib/types";
+  import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
+  import SafetyConfirm from "./components/SafetyConfirm.svelte";
+  import { runQuerySafely, CancelledByUser, isSafetyRejected } from "./lib/safety/run";
+  import { safetyPrompt, showSafetyModal } from "./lib/safety/modal";
+  import { bannerText } from "./lib/safety/labels";
+  import { get } from "svelte/store";
 
   let sidebarOpen = true;
   let sidebar: Sidebar;
@@ -56,6 +61,7 @@
   let serverOpen = false;
   let schemaNewOpen = false;
   let schemaNewName = "";
+
 
   async function createSchemaAction() {
     if (!$activeConnectionId || !schemaNewName.trim()) return;
@@ -146,15 +152,18 @@
     const BATCH = 200;
     let ok = 0;
     let failErr = "";
+    const csvSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     t.running = true; sync(t);
     for (let i = 0; i < rows.length; i += BATCH) {
       const chunk = rows.slice(i, i + BATCH);
       const values = chunk.map((r) => `(${r.map((v) => (v === "" ? "NULL" : lit(v))).join(", ")})`).join(", ");
       const sql = `INSERT INTO ${into} (${collist}) VALUES ${values};`;
       try {
-        await api.executeQuery($activeConnectionId, sql, t.id);
+        await runQuerySafely($activeConnectionId!, sql, csvSafety, showSafetyModal, t.id);
         ok += chunk.length;
       } catch (err) {
+        if (err instanceof CancelledByUser) break;
+        if (isSafetyRejected(err)) { failErr = `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`; break; }
         failErr = (err as { message?: string })?.message ?? String(err);
         break;
       }
@@ -285,7 +294,8 @@
     // Postgres: a graphical plan tree from EXPLAIN (FORMAT JSON).
     if (kind === "postgres") {
       try {
-        const res = await api.executeQuery($activeConnectionId, `EXPLAIN (FORMAT JSON) ${sql}`, `explain-${explainNonce++}`);
+        const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
+        const res = await runQuerySafely($activeConnectionId, `EXPLAIN (FORMAT JSON) ${sql}`, safety, showSafetyModal, `explain-${explainNonce++}`);
         const raw = res.rows?.[0]?.[0];
         const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
         const plan = (Array.isArray(arr) ? arr[0] : arr) as { Plan?: Record<string, unknown> } | undefined;
@@ -349,12 +359,15 @@
     if (!$activeConnectionId) return;
     t.running = true; t.error = null; sync(t);
     const start = performance.now();
+    const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
-      t.result = await api.executeQuery($activeConnectionId, sql, t.id);
+      t.result = await runQuerySafely($activeConnectionId, sql, safety, showSafetyModal, t.id);
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms });
       if (log) logSql(sql, { ms });
     } catch (e) {
+      if (e instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); t.running = false; sync(t); return; }
       t.error = String(e); t.result = null;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms, error: String(e) });
@@ -407,24 +420,10 @@
     sync(t);
   }
 
-  // UPDATE / DELETE with no WHERE — easy to fire by accident, hits every row.
-  function unsafeNoWhere(sql: string): boolean {
-    const s = sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim();
-    return /^(update|delete)\b/i.test(s) && !/\bwhere\b/i.test(s);
-  }
-
   async function runSql(t: QueryTab, sql: string) {
     const stmts = splitStatements(sql);
     if (!stmts.length) return;
     if ($readOnly && stmts.some((s) => !isReadStatement(s))) { showToast(false, blockedMsg); return; }
-    const unsafe = stmts.filter(unsafeNoWhere);
-    if (unsafe.length) {
-      const ok = await ask(
-        `${unsafe.length === 1 ? "This statement has" : `${unsafe.length} statements have`} no WHERE clause and will affect every row:\n\n${unsafe.map((s) => s.trim().slice(0, 120)).join("\n")}\n\nRun anyway?`,
-        { title: "Run without WHERE?", kind: "warning" },
-      );
-      if (!ok) return;
-    }
     t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync(t);
     // Single statement: keep the editable single-table path.
     if (stmts.length === 1) {
@@ -435,16 +434,19 @@
     // Multiple statements: run in order, collect each result, stop on first error.
     t.running = true; t.error = null; t.result = null; sync(t);
     const collected: import("./lib/types").QueryResult[] = [];
+    const multiSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     for (let idx = 0; idx < stmts.length; idx++) {
       const s = stmts[idx];
       const start = performance.now();
       try {
-        const r = await api.executeQuery($activeConnectionId!, s, t.id);
+        const r = await runQuerySafely($activeConnectionId!, s, multiSafety, showSafetyModal, t.id);
         collected.push(r);
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms });
         logSql(s, { ms });
       } catch (e) {
+        if (e instanceof CancelledByUser) { break; }
+        if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); break; }
         t.error = `Statement ${idx + 1} of ${stmts.length} failed: ${(e as { message?: string })?.message ?? String(e)}`;
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms, error: String(e) });
@@ -710,6 +712,7 @@
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
     t.running = true; t.error = null; sync(t);
+    const editSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
       for (const ch of e.detail) {
         const sets = Object.entries(ch.updates)
@@ -722,10 +725,12 @@
           })
           .join(" AND ");
         const upd = `UPDATE ${qtable(tbl.schema, tbl.table)} SET ${sets} WHERE ${where};`;
-        await api.executeQuery($activeConnectionId, upd, t.id);
+        await runQuerySafely($activeConnectionId!, upd, editSafety, showSafetyModal, t.id);
         logActivity(upd);
       }
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t); return;
     }
     t.running = false; sync(t);
@@ -800,10 +805,13 @@
       base = table;
       sqlTable = qtable(schema, table);
       try {
-        const r = await api.executeQuery($activeConnectionId, `SELECT * FROM ${sqlTable};`, tab.id);
+        const exportSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
+        const r = await runQuerySafely($activeConnectionId!, `SELECT * FROM ${sqlTable};`, exportSafety, showSafetyModal, tab.id);
         columns = r.columns;
         rows = r.rows;
       } catch (e) {
+        if (e instanceof CancelledByUser) return;
+        if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); return; }
         showToast(false, (e as { message?: string })?.message ?? String(e));
         return;
       }
@@ -857,6 +865,7 @@
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
     t.running = true; t.error = null; sync(t);
+    const delSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
       for (const i of idxs) {
         const row = t.result.rows[i];
@@ -867,10 +876,12 @@
           })
           .join(" AND ");
         const del = `DELETE FROM ${qtable(tbl.schema, tbl.table)} WHERE ${where};`;
-        await api.executeQuery($activeConnectionId, del, t.id);
+        await runQuerySafely($activeConnectionId!, del, delSafety, showSafetyModal, t.id);
         logActivity(del);
       }
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t);
       return;
     }
@@ -923,10 +934,13 @@
       ? `INSERT INTO ${into} (${set.map(qid).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
       : emptyInsert;
     t.running = true; t.error = null; sync(t);
+    const insSafety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
     try {
-      await api.executeQuery($activeConnectionId, sql, t.id);
+      await runQuerySafely($activeConnectionId!, sql, insSafety, showSafetyModal, t.id);
       logActivity(sql);
     } catch (err) {
+      if (err instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(err)) { showToast(false, `Safety blocked: ${(err as { message?: string }).message ?? String(err)}`); t.running = false; sync(t); return; }
       t.error = String(err); t.running = false; sync(t);
       return;
     }
@@ -967,8 +981,8 @@
         // The Rust backend resolves the password from the keychain via PasswordSource.
         const id = await api.connect(cfg);
         workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: cfg }]));
-        ensureWorkspace(id);
-        setReadOnly(id, shouldStartReadOnly(cfg.color ?? undefined, cfg.tag));
+        ensureWorkspace(id, cfg.safety ?? "confirm-destructive");
+        setSafety(id, cfg.safety ?? "confirm-destructive");
       } catch {
         /* skip connections that no longer reach */
       }
@@ -988,8 +1002,8 @@
   function onConnected(e: CustomEvent<{ id: string; config: ConnectionConfig }>) {
     const { id, config } = e.detail;
     workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config }]));
-    ensureWorkspace(id);
-    setReadOnly(id, shouldStartReadOnly(config.color ?? undefined, config.tag));
+    ensureWorkspace(id, config.safety ?? "confirm-destructive");
+    setSafety(id, config.safety ?? "confirm-destructive");
     activeConnection.set(config);
     activeConnectionId.set(id);
     addOpen = false;
@@ -1003,6 +1017,14 @@
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
     reloadSidebar();
+  }
+
+  function handleToggleReadOnly() {
+    if (!$activeConnectionId || !$activeConnection) return;
+    const next: SafetyLevel = $readOnly
+      ? ($activeConnection.safety ?? "confirm-destructive")
+      : "read-only";
+    setSafety($activeConnectionId, next);
   }
 
   function closeWorkspace(id: string) {
@@ -1185,13 +1207,15 @@
       readOnly={$readOnly}
       inTxn={activeInTxn}
       {txnBusy}
+      safety={$currentWorkspace?.safety ?? "off"}
+      configSafety={$activeConnection?.safety ?? "off"}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
-      on:toggleReadOnly={() => { if ($activeConnectionId) setReadOnly($activeConnectionId, !$readOnly); }}
+      on:toggleReadOnly={handleToggleReadOnly}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
       on:rollback={rollbackTransaction}
@@ -1216,6 +1240,17 @@
           on:new={newTab}
           on:pin={(e) => pinTab(e.detail)}
         />
+
+        {#if $currentWorkspace && $currentWorkspace.safety !== "off" && !$currentWorkspace.dismissedSafetyBanner}
+          <div class="safety-banner severity-{$currentWorkspace.safety}">
+            <span>{bannerText($currentWorkspace.safety)}</span>
+            <button
+              type="button"
+              aria-label="Dismiss safety banner"
+              on:click={() => $activeConnectionId && dismissBanner($activeConnectionId)}
+            >×</button>
+          </div>
+        {/if}
 
         {#if tab.kind === "query"}
           {#key focusedTabId}
@@ -1387,6 +1422,16 @@
   <ExplainPlan root={explainPlan} sql={explainSql} on:close={() => (explainPlan = null)} />
 {/if}
 
+{#if $safetyPrompt}
+  <SafetyConfirm
+    open={true}
+    statement={$safetyPrompt.statement}
+    reason={$safetyPrompt.reason}
+    on:cancel={() => { $safetyPrompt?.resolve(false); safetyPrompt.set(null); }}
+    on:confirm={() => { $safetyPrompt?.resolve(true); safetyPrompt.set(null); }}
+  />
+{/if}
+
 {#if schemaNewOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
   <div class="prompt-backdrop" on:click|self={() => (schemaNewOpen = false)}>
@@ -1508,4 +1553,22 @@
     border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
     font-family: var(--font-mono); font-size: 11.5px; white-space: pre-wrap; flex: none;
   }
+
+  .safety-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--banner-bg, #fef3c7);
+    color: var(--banner-fg, #78350f);
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    flex: none;
+  }
+  .safety-banner.severity-read-only { background: #fee2e2; color: #7f1d1d; }
+  .safety-banner.severity-confirm-writes,
+  .safety-banner.severity-confirm-ddl { background: #ffedd5; color: #7c2d12; }
+  .safety-banner button {
+    background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
+    color: inherit; opacity: 0.6;
+  }
+  .safety-banner button:hover { opacity: 1; }
 </style>

@@ -9,17 +9,41 @@ pub enum SqlEffect {
     Unknown,
 }
 
+/// Split a multi-statement string into individual statements. Handles
+/// comments and string literals correctly (uses the same stripper as classify).
+pub fn split_statements(sql: &str) -> Vec<String> {
+    let stripped = strip_comments_and_strings(sql);
+    // Since strip_comments_and_strings preserves character offsets (replacing
+    // comments/strings with spaces of same length), we can use the same positions
+    // to split the original sql.
+    let mut result = Vec::new();
+    let mut start = 0;
+    let bytes = stripped.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b';' {
+            let piece = sql[start..i].trim().to_string();
+            if !piece.is_empty() {
+                result.push(piece);
+            }
+            start = i + 1;
+        }
+    }
+    let tail = sql[start..].trim().to_string();
+    if !tail.is_empty() {
+        result.push(tail);
+    }
+    result
+}
+
 pub fn classify(sql: &str) -> Vec<SqlEffect> {
     let stripped = strip_comments_and_strings(sql);
-    stripped
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(classify_one)
+    split_statements(&stripped)
+        .iter()
+        .map(|s| classify_one(s))
         .collect()
 }
 
-fn classify_one(statement: &str) -> SqlEffect {
+pub fn classify_one(statement: &str) -> SqlEffect {
     // Take the first alphabetic token (case-insensitive), match against verbs.
     let verb: String = statement
         .chars()
@@ -35,6 +59,38 @@ fn classify_one(statement: &str) -> SqlEffect {
         "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "RENAME" => SqlEffect::Ddl,
         _ => SqlEffect::Unknown,
     }
+}
+
+/// Does the statement have a WHERE clause at the top level?
+/// Uses the same stripper as `classify` so comments and string literals
+/// containing "WHERE" don't produce false positives.
+/// Detects any occurrence of WHERE as a standalone token in the stripped text —
+/// this catches WHERE in a subquery too, which is acceptable for safety
+/// (over-detects → user confirms → run; safer than under-detecting).
+pub fn has_where_clause(sql: &str) -> bool {
+    let stripped = strip_comments_and_strings(sql);
+    let upper = stripped.to_ascii_uppercase();
+    // Look for WHERE surrounded by non-alphanumeric-non-underscore characters
+    // (so WHERE_LIKE identifier doesn't match).
+    let bytes = upper.as_bytes();
+    let needle = b"WHERE";
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            let before_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+            let after_ok =
+                i + needle.len() == bytes.len() || !is_ident_byte(bytes[i + needle.len()]);
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }
 
 /// Strip block comments (/* ... */), line comments (-- ...), and string literals
@@ -195,5 +251,49 @@ mod tests {
     fn trailing_semicolon_does_not_add_empty_statement() {
         assert_eq!(classify("SELECT 1;"), vec![SqlEffect::Read]);
         assert_eq!(classify("SELECT 1; "), vec![SqlEffect::Read]);
+    }
+
+    #[test]
+    fn has_where_true_for_delete_with_where() {
+        assert!(has_where_clause("DELETE FROM t WHERE id = 1"));
+    }
+
+    #[test]
+    fn has_where_false_for_delete_without_where() {
+        assert!(!has_where_clause("DELETE FROM t"));
+        assert!(!has_where_clause("delete from t;"));
+    }
+
+    #[test]
+    fn has_where_ignores_where_in_line_comment() {
+        assert!(!has_where_clause("DELETE FROM t -- WHERE id = 1"));
+    }
+
+    #[test]
+    fn has_where_ignores_where_in_block_comment() {
+        assert!(!has_where_clause("DELETE FROM t /* WHERE id = 1 */"));
+    }
+
+    #[test]
+    fn has_where_ignores_where_in_string_literal() {
+        assert!(!has_where_clause("DELETE FROM t WHERE_LIKE = 'WHERE'"));
+        // Note the pre-WHERE_LIKE — a legit identifier that starts with WHERE. Should not match.
+    }
+
+    #[test]
+    fn has_where_detects_where_after_subquery() {
+        // The outer WHERE is what matters
+        assert!(has_where_clause(
+            "UPDATE t SET x = (SELECT max(y) FROM u WHERE y > 0) WHERE t.id = 1"
+        ));
+    }
+
+    #[test]
+    fn split_statements_handles_multi_statement() {
+        let parts = split_statements("SELECT 1; DELETE FROM t; INSERT INTO t VALUES (1)");
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0].trim_start().starts_with("SELECT"));
+        assert!(parts[1].trim_start().starts_with("DELETE"));
+        assert!(parts[2].trim_start().starts_with("INSERT"));
     }
 }
