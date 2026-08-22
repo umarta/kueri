@@ -9,6 +9,7 @@ use crate::db::driver::{
 };
 use crate::db::pool::AppState;
 use crate::error::{AppError, AppResult};
+use crate::sql_classify::{classify, SqlEffect};
 
 /// Write text to a path (used by CSV/JSON export; the path comes from a save dialog).
 #[tauri::command]
@@ -229,11 +230,17 @@ pub async fn execute_query(
 ) -> AppResult<QueryResult> {
     let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     let driver = state.get(uuid)?;
+    // Classify the SQL to detect DDL statements.
+    let effects = classify(&sql);
     // Run on a task we can abort, so `cancel_query` can stop a long-running query.
     let task = tokio::spawn(async move { driver.run_query(&sql).await });
     state.register_query(query_id.clone(), task.abort_handle());
     let res = task.await;
     state.finish_query(&query_id);
+    // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
+    if effects.iter().any(|e| matches!(e, SqlEffect::Ddl)) {
+        state.schema_cache.invalidate(uuid);
+    }
     match res {
         Ok(inner) => inner,
         Err(e) if e.is_cancelled() => Err(AppError::Other("Query cancelled.".into())),
