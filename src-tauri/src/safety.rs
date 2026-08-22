@@ -2,19 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum SafetyLevel {
     Off,
     Warn,
+    #[default]
     ConfirmDestructive,
     ConfirmWrites,
     ConfirmDdl,
     ReadOnly,
-}
-
-impl Default for SafetyLevel {
-    fn default() -> Self {
-        SafetyLevel::ConfirmDestructive
-    }
 }
