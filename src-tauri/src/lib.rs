@@ -6,12 +6,12 @@ mod menu;
 mod persist;
 mod pgtools;
 mod migration;
-mod safety;
-mod secrets;
-mod ssh {
+pub mod safety;
+pub mod secrets;
+pub mod ssh {
     pub mod profile;
 }
-mod tls;
+pub mod tls;
 
 use db::pool::AppState;
 
