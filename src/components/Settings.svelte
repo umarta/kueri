@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { settings } from "../lib/stores/settings";
+  import SshProfiles from "./SshProfiles.svelte";
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -83,9 +84,7 @@
           {/each}
         </ul>
       {:else if section === "ssh-profiles"}
-        <div class="ssh-profiles-placeholder">
-          SSH profile management coming soon.
-        </div>
+        <SshProfiles />
       {:else}
         <div class="about">
           <div class="logo">Kueri</div>
