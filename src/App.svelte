@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, onMount, onDestroy } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { open as openFileDialog, ask, save } from "@tauri-apps/plugin-dialog";
+  import { open as openFileDialog, ask, save, message } from "@tauri-apps/plugin-dialog";
   import Welcome from "./components/Welcome.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import WorkspaceRail from "./components/WorkspaceRail.svelte";
@@ -1054,6 +1054,30 @@
     if (tab.selected) await browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
+  async function switchDatabase(e: CustomEvent<string>) {
+    const id = $activeConnectionId;
+    const conn = $activeConnection;
+    if (!id || !conn) return;
+    const target = e.detail;
+    if (target === conn.database) return;
+    try {
+      await api.switchDatabase(id, target);
+    } catch (err) {
+      await message(`Switch database failed: ${(err as { message?: string })?.message ?? String(err)}`, { title: "Kueri", kind: "error" });
+      return;
+    }
+    // Reset per-connection state: tabs, schemaCatalog, activeSchema all reference the OLD DB.
+    const savedSafety = $currentWorkspace?.safety ?? conn.safety ?? "confirm-destructive";
+    dropWorkspace(id);
+    ensureWorkspace(id, savedSafety);
+    setSafety(id, savedSafety);
+    // Reflect the new database in the connection store so the toolbar + workspace list update.
+    const nextConfig = { ...conn, database: target };
+    activeConnection.set(nextConfig);
+    workspaces.update((ws) => ws.map((w) => (w.id === id ? { id, config: nextConfig } : w)));
+    await reloadSidebar();
+  }
+
   // ── Native menu (ids emitted from the Rust menu) ────────────────────────────
   function handleMenu(id: string) {
     switch (id) {
@@ -1211,6 +1235,7 @@
       configSafety={$activeConnection?.safety ?? "off"}
       on:disconnect={disconnect}
       on:refresh={refresh}
+      on:switchDatabase={switchDatabase}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}

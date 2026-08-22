@@ -19,6 +19,8 @@ import type { ColumnDraft } from "./ddl";
 export const api = {
   connect: (config: ConnectionConfig) => invoke<string>("connect", { config }),
   disconnect: (id: string) => invoke<void>("disconnect", { id }),
+  listDatabases: (id: string) => invoke<string[]>("list_databases", { id }),
+  switchDatabase: (id: string, database: string) => invoke<void>("switch_database", { id, database }),
   listSchemas: (id: string) => invoke<SchemaInfo[]>("list_schemas", { id }),
   listTables: (id: string, schema: string) =>
     invoke<TableInfo[]>("list_tables", { id, schema }),

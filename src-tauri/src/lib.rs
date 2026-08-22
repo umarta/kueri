@@ -41,6 +41,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::connect,
             commands::disconnect,
+            commands::list_databases,
+            commands::switch_database,
             commands::list_schemas,
             commands::list_tables,
             commands::list_columns,

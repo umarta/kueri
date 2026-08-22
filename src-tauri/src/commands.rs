@@ -61,6 +61,43 @@ pub async fn disconnect(state: State<'_, AppState>, id: String) -> AppResult<()>
 }
 
 #[tauri::command]
+pub async fn list_databases(state: State<'_, AppState>, id: String) -> AppResult<Vec<String>> {
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let driver = state.get(uuid)?;
+    driver.list_databases().await
+}
+
+#[tauri::command]
+pub async fn switch_database(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    id: String,
+    database: String,
+) -> AppResult<()> {
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let configs = crate::persist::load_connections(app.clone())?;
+    let mut cfg = configs
+        .iter()
+        .find(|c| c.id == uuid)
+        .cloned()
+        .ok_or_else(|| {
+            AppError::Other(format!("connection {id} not found in persisted configs"))
+        })?;
+    if cfg.ssh.is_some() {
+        return Err(AppError::Other(
+            "Switching databases on SSH-tunneled connections isn't supported yet — reconnect manually with the new database.".into(),
+        ));
+    }
+    cfg.database = database;
+    state.remove(uuid);
+    let driver = crate::db::open(&cfg).await?;
+    state.insert(uuid, Arc::from(driver));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_schemas(state: State<'_, AppState>, id: String) -> AppResult<Vec<SchemaInfo>> {
     let uuid =
         Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
