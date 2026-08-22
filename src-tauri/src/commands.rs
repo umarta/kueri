@@ -26,11 +26,15 @@ pub fn read_text_file(path: String) -> AppResult<String> {
 }
 
 #[tauri::command]
-pub async fn connect(state: State<'_, AppState>, config: ConnectionConfigV2) -> AppResult<String> {
+pub async fn connect(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    config: ConnectionConfigV2,
+) -> AppResult<String> {
     let mut config = config;
     // Open an SSH tunnel first and point the driver at the local forward.
     let tunnel = if config.ssh.is_some() {
-        let (local_port, child) = crate::db::tunnel::open(&config).await?;
+        let (local_port, child) = crate::db::tunnel::open(&app, &config).await?;
         config.host = "127.0.0.1".into();
         config.port = local_port;
         Some(child)

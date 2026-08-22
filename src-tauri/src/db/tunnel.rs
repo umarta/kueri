@@ -7,13 +7,16 @@ use std::net::TcpListener;
 use std::process::Stdio;
 use std::time::Duration;
 
+use tauri::AppHandle;
+use tauri::Manager;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 
 use crate::db::connect::ConnectionConfigV2;
 use crate::error::{AppError, AppResult};
-use crate::ssh::profile::{SshAuth, SshRef};
+use crate::ssh::profile::{SshAuth, SshProfile, SshRef};
+use crate::ssh::store::SshProfileStore;
 
 fn free_port() -> AppResult<u16> {
     let l = TcpListener::bind("127.0.0.1:0")
@@ -25,7 +28,7 @@ fn free_port() -> AppResult<u16> {
 
 /// Open a tunnel and return `(local_port, ssh_child)`. The child is configured
 /// to be killed when dropped, so disconnecting (dropping it) tears the tunnel down.
-pub async fn open(cfg: &ConnectionConfigV2) -> AppResult<(u16, Child)> {
+pub async fn open(app: &AppHandle, cfg: &ConnectionConfigV2) -> AppResult<(u16, Child)> {
     let ssh_ref = match &cfg.ssh {
         Some(r) => r,
         None => {
@@ -35,12 +38,21 @@ pub async fn open(cfg: &ConnectionConfigV2) -> AppResult<(u16, Child)> {
         }
     };
 
-    let profile = match ssh_ref {
-        SshRef::Inline(p) => p,
-        SshRef::Profile(_) => {
-            return Err(AppError::Other(
-                "SSH profile references not yet supported (Phase 4).".into(),
-            ))
+    let profile: SshProfile = match ssh_ref {
+        SshRef::Inline(p) => p.clone(),
+        SshRef::Profile(id) => {
+            let dir = app
+                .path()
+                .app_config_dir()
+                .map_err(|e| AppError::Other(format!("config dir: {e}")))?;
+            let store = SshProfileStore::new(&dir);
+            let profiles = store.load()?;
+            profiles.into_iter().find(|p| p.id == *id).ok_or_else(|| {
+                AppError::Other(format!(
+                    "SSH profile {} not found — the connection references a deleted profile",
+                    id
+                ))
+            })?
         }
     };
 
