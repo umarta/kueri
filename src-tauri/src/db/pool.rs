@@ -5,6 +5,7 @@ use tokio::process::Child;
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 
+use crate::confirm_tokens::ConfirmTokenStore;
 use crate::db::driver::Driver;
 use crate::error::{AppError, AppResult};
 use crate::schema_cache::SchemaCache;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub tunnels: Mutex<HashMap<Uuid, Child>>,
     /// Per-connection schema catalog cache.
     pub schema_cache: SchemaCache,
+    pub confirm_tokens: ConfirmTokenStore,
 }
 
 impl AppState {

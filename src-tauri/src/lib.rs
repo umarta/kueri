@@ -1,5 +1,6 @@
 mod clients;
 mod commands;
+mod confirm_tokens;
 pub mod db;
 mod error;
 mod menu;
