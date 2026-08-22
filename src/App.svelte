@@ -24,19 +24,19 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, workspaces,
-    isReadStatement, shouldStartReadOnly,
+    isReadStatement,
   } from "./lib/stores/connection";
   import {
     workspaceStates,
     schemaCatalog, activeSchema, readOnly, inTransaction,
     ensureWorkspace, dropWorkspace,
-    setReadOnly, setInTransaction,
+    setSafety, setInTransaction,
     catalogColumns,
     addTab, removeTab, updateTab, focusTab,
   } from "./lib/stores/workspaces";
   import { api } from "./lib/tauri";
   import { logSql, logActivity } from "./lib/stores/log";
-  import type { ConnectionConfig, RowEdit, QueryTab } from "./lib/types";
+  import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
 
   let sidebarOpen = true;
   let sidebar: Sidebar;
@@ -967,8 +967,8 @@
         // The Rust backend resolves the password from the keychain via PasswordSource.
         const id = await api.connect(cfg);
         workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: cfg }]));
-        ensureWorkspace(id);
-        setReadOnly(id, shouldStartReadOnly(cfg.color ?? undefined, cfg.tag));
+        ensureWorkspace(id, cfg.safety ?? "confirm-destructive");
+        setSafety(id, cfg.safety ?? "confirm-destructive");
       } catch {
         /* skip connections that no longer reach */
       }
@@ -988,8 +988,8 @@
   function onConnected(e: CustomEvent<{ id: string; config: ConnectionConfig }>) {
     const { id, config } = e.detail;
     workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config }]));
-    ensureWorkspace(id);
-    setReadOnly(id, shouldStartReadOnly(config.color ?? undefined, config.tag));
+    ensureWorkspace(id, config.safety ?? "confirm-destructive");
+    setSafety(id, config.safety ?? "confirm-destructive");
     activeConnection.set(config);
     activeConnectionId.set(id);
     addOpen = false;
@@ -1003,6 +1003,14 @@
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
     reloadSidebar();
+  }
+
+  function handleToggleReadOnly() {
+    if (!$activeConnectionId || !$activeConnection) return;
+    const next: SafetyLevel = $readOnly
+      ? ($activeConnection.safety ?? "confirm-destructive")
+      : "read-only";
+    setSafety($activeConnectionId, next);
   }
 
   function closeWorkspace(id: string) {
@@ -1191,7 +1199,7 @@
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
-      on:toggleReadOnly={() => { if ($activeConnectionId) setReadOnly($activeConnectionId, !$readOnly); }}
+      on:toggleReadOnly={handleToggleReadOnly}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
       on:rollback={rollbackTransaction}
