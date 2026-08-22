@@ -23,10 +23,17 @@
   import ExportDialog from "./components/ExportDialog.svelte";
   import { settings } from "./lib/stores/settings";
   import {
-    activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
-    readOnly, isReadStatement, shouldStartReadOnly,
-    inTransaction, setInTransaction,
+    activeConnectionId, activeConnection, workspaces,
+    isReadStatement, shouldStartReadOnly,
   } from "./lib/stores/connection";
+  import {
+    workspaceStates,
+    schemaCatalog, activeSchema, readOnly, inTransaction,
+    ensureWorkspace, dropWorkspace,
+    setReadOnly, setInTransaction,
+    catalogColumns,
+    addTab, removeTab, updateTab, focusTab,
+  } from "./lib/stores/workspaces";
   import { api } from "./lib/tauri";
   import { logSql, logActivity } from "./lib/stores/log";
   import type { ConnectionConfig, RowEdit, QueryTab } from "./lib/types";
@@ -139,7 +146,7 @@
     const BATCH = 200;
     let ok = 0;
     let failErr = "";
-    t.running = true; sync();
+    t.running = true; sync(t);
     for (let i = 0; i < rows.length; i += BATCH) {
       const chunk = rows.slice(i, i + BATCH);
       const values = chunk.map((r) => `(${r.map((v) => (v === "" ? "NULL" : lit(v))).join(", ")})`).join(", ");
@@ -152,7 +159,7 @@
         break;
       }
     }
-    t.running = false; sync();
+    t.running = false; sync(t);
     if (failErr) showToast(false, `Imported ${ok} rows, then failed: ${failErr}`);
     else showToast(true, `Imported ${ok} row${ok === 1 ? "" : "s"} into ${schema}.${table}.`);
     await browseTable(t, schema, table);
@@ -160,18 +167,17 @@
 
   // Load a statement from the history panel into a fresh query tab.
   function openSqlTab(sql: string, title: string) {
+    if (!$activeConnectionId) return;
     const t = blankQueryTab();
     t.doc = sql;
     t.title = title;
-    tabs = [...tabs, t];
-    activeId = t.id;
+    addTab($activeConnectionId, t);
   }
   // Load SQL into the active query tab (don't spawn a tab each click); if the
   // active tab isn't a query tab, open one new query tab.
   function loadIntoEditor(sql: string) {
-    if (tab.kind === "query") {
-      tab.doc = sql;
-      sync();
+    if (tab.kind === "query" && $activeConnectionId) {
+      updateTab($activeConnectionId, tab.id, (x) => { x.doc = sql; });
       editor?.setDoc(sql);
     } else {
       openSqlTab(sql, "Query");
@@ -183,7 +189,7 @@
 
   // ── Manual transactions ───────────────────────────────────────────────────────
   let txnBusy = false;
-  $: activeInTxn = $activeConnectionId ? $inTransaction.has($activeConnectionId) : false;
+  $: activeInTxn = !!$inTransaction;
   function txnErr(e: unknown) {
     return (e as { message?: string })?.message ?? String(e);
   }
@@ -229,11 +235,11 @@
     }
   }
   function runInNewTab(sql: string) {
+    if (!$activeConnectionId) return;
     const t = blankQueryTab();
     t.doc = sql;
     t.title = "Query";
-    tabs = [...tabs, t];
-    activeId = t.id;
+    addTab($activeConnectionId, t);
     runSql(t, sql);
   }
 
@@ -313,24 +319,27 @@
       filters: [], filtersOpen: false, selectedRow: null, sort: [], offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
     };
   }
-  let tabs: QueryTab[] = [blankQueryTab()];
-  let activeId = tabs[0].id;
-  $: tab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  $: currentWs = $workspaceStates.get($activeConnectionId ?? "");
+  $: tabs = currentWs?.tabs ?? [];
+  $: focusedTabId = currentWs?.focusedTabId ?? null;
+  $: tab = tabs.find((t) => t.id === focusedTabId) ?? tabs[0] ?? blankQueryTab();
   // Editable when the tab resolves to a single updatable table — always true for a
   // table-browse tab, and for a query tab whose SQL is a simple `SELECT * FROM <table>`.
   $: editing = !!tab.editableTable && !tab.running && !$readOnly;
-  const sync = () => (tabs = tabs); // commit mutations of a tab back to the array
+  // Push local mutations on a QueryTab back into the workspaceStates store so
+  // that subscribers (QueryTabs bar, DataGrid, etc.) see the update.
+  function sync(t: QueryTab) {
+    if ($activeConnectionId) updateTab($activeConnectionId, t.id, (x) => Object.assign(x, t));
+  }
 
   function newTab() {
+    if (!$activeConnectionId) return;
     const t = blankQueryTab();
-    tabs = [...tabs, t];
-    activeId = t.id;
+    addTab($activeConnectionId, t);
   }
   function closeTab(id: string) {
-    if (tabs.length === 1) return;
-    const idx = tabs.findIndex((t) => t.id === id);
-    tabs = tabs.filter((t) => t.id !== id);
-    if (activeId === id) activeId = tabs[Math.max(0, idx - 1)].id;
+    if (!$activeConnectionId || tabs.length === 1) return;
+    removeTab($activeConnectionId, id);
   }
 
   // ── Query execution (always scoped to a specific tab `t`) ────────────────────
@@ -338,7 +347,7 @@
   // grid's own browse/edit SQL is never recorded in History.
   async function exec(t: QueryTab, sql: string, log = false) {
     if (!$activeConnectionId) return;
-    t.running = true; t.error = null; sync();
+    t.running = true; t.error = null; sync(t);
     const start = performance.now();
     try {
       t.result = await api.executeQuery($activeConnectionId, sql, t.id);
@@ -351,7 +360,7 @@
       logActivity(sql, { ms, error: String(e) });
       if (log) logSql(sql, { ms, error: String(e) });
     } finally {
-      t.running = false; sync();
+      t.running = false; sync(t);
     }
   }
 
@@ -395,7 +404,7 @@
     if (idx < 0 || idx >= t.results.length) return;
     t.resultIdx = idx;
     t.result = t.results[idx];
-    sync();
+    sync(t);
   }
 
   // UPDATE / DELETE with no WHERE — easy to fire by accident, hits every row.
@@ -416,7 +425,7 @@
       );
       if (!ok) return;
     }
-    t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync();
+    t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync(t);
     // Single statement: keep the editable single-table path.
     if (stmts.length === 1) {
       await exec(t, stmts[0], true);
@@ -424,7 +433,7 @@
       return;
     }
     // Multiple statements: run in order, collect each result, stop on first error.
-    t.running = true; t.error = null; t.result = null; sync();
+    t.running = true; t.error = null; t.result = null; sync(t);
     const collected: import("./lib/types").QueryResult[] = [];
     for (let idx = 0; idx < stmts.length; idx++) {
       const s = stmts[idx];
@@ -447,7 +456,7 @@
     t.resultIdx = Math.max(0, collected.length - 1);
     t.result = collected[t.resultIdx] ?? null;
     t.running = false;
-    sync();
+    sync(t);
   }
 
   /** A query is editable only if it's `SELECT * FROM <one table>` (no joins,
@@ -474,7 +483,7 @@
   async function resolveEditable(t: QueryTab) {
     const det = detectEditableTable(t.doc);
     if (!det || !$activeConnectionId) {
-      t.editableTable = null; t.pkColumns = []; t.columns = []; sync();
+      t.editableTable = null; t.pkColumns = []; t.columns = []; sync(t);
       return;
     }
     try {
@@ -484,7 +493,7 @@
     } catch {
       t.editableTable = null; t.pkColumns = []; t.columns = [];
     }
-    sync();
+    sync(t);
   }
 
   // Build a WHERE clause from the tab's filter conditions (Postgres-style quoting,
@@ -528,11 +537,11 @@
       : "";
     const off = t.offset > 0 ? ` OFFSET ${t.offset}` : "";
     t.doc = `SELECT * FROM ${qtable(schema, table)}${buildWhere(t)}${order} LIMIT ${$settings.rowLimit}${off};`;
-    sync();
+    sync(t);
     await exec(t, t.doc);
     t.editableTable = t.result ? { schema, table } : null;
     if (t.result) {
-      catalogColumns(table, t.result.columns);
+      if ($activeConnectionId) catalogColumns($activeConnectionId, table, t.result.columns);
       try {
         t.pkColumns = await api.primaryKeys($activeConnectionId!, schema, table);
       } catch {
@@ -542,7 +551,7 @@
     }
     // Load column types too — powers the Structure tab AND the row-detail panel.
     await loadColumns(t);
-    sync();
+    sync(t);
   }
 
   function onSelectTable(e: CustomEvent<{ schema: string; table: string; isView?: boolean }>) {
@@ -553,19 +562,20 @@
   }
   // Promote a preview (italic) tab to a pinned (normal) tab.
   function pinTab(id: string) {
-    const t = tabs.find((x) => x.id === id);
-    if (t && t.preview) { t.preview = false; sync(); }
+    if (!$activeConnectionId) return;
+    updateTab($activeConnectionId, id, (x) => { x.preview = false; });
   }
 
   // TablePlus-style preview tabs: a single-click reuses the active preview tab
   // (italic) in place; double-click (pin=true) opens/keeps a pinned tab.
   function openTable(schema: string, table: string, pin: boolean, isView = false) {
+    if (!$activeConnectionId) return;
     const existing = tabs.find(
       (x) => x.kind === "table" && x.selected?.schema === schema && x.selected?.table === table,
     );
     if (existing) {
-      activeId = existing.id;
-      if (pin && existing.preview) { existing.preview = false; sync(); }
+      focusTab($activeConnectionId, existing.id);
+      if (pin && existing.preview) updateTab($activeConnectionId, existing.id, (x) => { x.preview = false; });
       return;
     }
     let t: QueryTab;
@@ -576,25 +586,25 @@
       t.offset = 0;
       t.preview = !pin;
       t.selected = { schema, table };
+      sync(t);
     } else {
       t = tableTab(schema, table);
       t.preview = !pin;
-      tabs = [...tabs, t];
+      addTab($activeConnectionId, t);
     }
     t.isView = isView;
-    activeId = t.id;
+    focusTab($activeConnectionId, t.id);
     t.selectedRow = null;
-    sync();
+    sync(t);
     return browseTable(t, schema, table);
   }
 
   // ── Foreign-key navigation ───────────────────────────────────────────────────
   function openTableFiltered(schema: string, table: string, column: string, value: string) {
+    if (!$activeConnectionId) return;
     const t = tableTab(schema, table);
     t.filters = [{ column, op: "=", value }];
-    tabs = [...tabs, t];
-    activeId = t.id;
-    sync();
+    addTab($activeConnectionId, t);
     browseTable(t, schema, table);
   }
   function followFk(e: CustomEvent<{ column: string; value: string }>) {
@@ -608,14 +618,14 @@
     if (!tab.selected) return;
     tab.filters = e.detail;
     tab.offset = 0;
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
   function clearFilters() {
     if (!tab.selected) return;
     tab.filters = [];
     tab.offset = 0;
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
@@ -623,14 +633,14 @@
   function pagePrev() {
     if (tab.kind !== "table" || !tab.selected || tab.offset === 0) return;
     tab.offset = Math.max(0, tab.offset - $settings.rowLimit);
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
   function pageNext() {
     if (tab.kind !== "table" || !tab.selected) return;
     if ((tab.result?.rows.length ?? 0) < $settings.rowLimit) return; // last page
     tab.offset += $settings.rowLimit;
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
@@ -656,7 +666,7 @@
     }
     tab.sort = next;
     tab.offset = 0;
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
@@ -667,18 +677,18 @@
     tab.filters = [...tab.filters.filter((f) => !(f.column === column && f.op === op)), { column, op, value }];
     tab.filtersOpen = true;
     tab.offset = 0;
-    sync();
+    sync(tab);
     browseTable(tab, tab.selected.schema, tab.selected.table);
   }
 
   async function loadColumns(t: QueryTab) {
     if (!$activeConnectionId || !t.selected) return;
     t.columns = await api.listColumns($activeConnectionId, t.selected.schema, t.selected.table);
-    sync();
+    sync(t);
   }
 
   async function setView(v: "data" | "structure") {
-    tab.view = v; sync();
+    tab.view = v; sync(tab);
     if (v === "structure" && tab.selected && tab.columns.length === 0) await loadColumns(tab);
   }
 
@@ -699,7 +709,7 @@
     if (!tbl || !$activeConnectionId || !t.result) return;
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
-    t.running = true; t.error = null; sync();
+    t.running = true; t.error = null; sync(t);
     try {
       for (const ch of e.detail) {
         const sets = Object.entries(ch.updates)
@@ -716,9 +726,9 @@
         logActivity(upd);
       }
     } catch (err) {
-      t.error = String(err); t.running = false; sync(); return;
+      t.error = String(err); t.running = false; sync(t); return;
     }
-    t.running = false; sync();
+    t.running = false; sync(t);
     // Refresh from source of truth — re-browse for a table tab, or re-run the
     // original query (so a query tab keeps its WHERE/ORDER/LIMIT) for a query tab.
     if (t.kind === "table") {
@@ -846,7 +856,7 @@
     if (!ok) return;
     const cols = t.result.columns;
     const whereCols = t.pkColumns.length ? t.pkColumns.filter((c) => cols.includes(c)) : cols;
-    t.running = true; t.error = null; sync();
+    t.running = true; t.error = null; sync(t);
     try {
       for (const i of idxs) {
         const row = t.result.rows[i];
@@ -861,10 +871,10 @@
         logActivity(del);
       }
     } catch (err) {
-      t.error = String(err); t.running = false; sync();
+      t.error = String(err); t.running = false; sync(t);
       return;
     }
-    t.running = false; t.selectedRow = null; sync();
+    t.running = false; t.selectedRow = null; sync(t);
     await browseTable(t, tbl.schema, tbl.table);
   }
 
@@ -912,29 +922,22 @@
     const sql = set.length
       ? `INSERT INTO ${into} (${set.map(qid).join(", ")}) VALUES (${set.map((c) => lit(updates[c])).join(", ")});`
       : emptyInsert;
-    t.running = true; t.error = null; sync();
+    t.running = true; t.error = null; sync(t);
     try {
       await api.executeQuery($activeConnectionId, sql, t.id);
       logActivity(sql);
     } catch (err) {
-      t.error = String(err); t.running = false; sync();
+      t.error = String(err); t.running = false; sync(t);
       return;
     }
-    t.running = false; inserting = false; sync();
+    t.running = false; inserting = false; sync(t);
     await browseTable(t, tbl.schema, tbl.table);
   }
 
   // ── Connection lifecycle (multi-workspace) ───────────────────────────────────
-  // Each open connection keeps its own tab set; we stash the active one's tabs
-  // before switching so they're restored when the user comes back.
+  // Tab sets and schema catalogs are now keyed by connection id in workspaceStates.
+  // stash/freshTabs/restore are gone — workspaceStates carries that state.
   let addOpen = false;
-  let stash: Record<string, { tabs: QueryTab[]; activeId: string; seq: number }> = {};
-
-  function freshTabs() {
-    seq = 1;
-    tabs = [blankQueryTab()];
-    activeId = tabs[0].id;
-  }
 
   // ── Session restore — reopen the connections that were open last time ─────────
   let sessionReady = false;
@@ -964,6 +967,8 @@
         // The Rust backend resolves the password from the keychain via PasswordSource.
         const id = await api.connect(cfg);
         workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: cfg }]));
+        ensureWorkspace(id);
+        setReadOnly(id, shouldStartReadOnly(cfg.color ?? undefined, cfg.tag));
       } catch {
         /* skip connections that no longer reach */
       }
@@ -972,21 +977,7 @@
     if (target) {
       activeConnection.set(target.config);
       activeConnectionId.set(target.id);
-      readOnly.set(shouldStartReadOnly(target.config.color ?? undefined, target.config.tag));
-      freshTabs();
-      schemaCatalog.set({});
       reloadSidebar();
-    }
-  }
-  function stashCurrent() {
-    if ($activeConnectionId) stash[$activeConnectionId] = { tabs, activeId, seq };
-  }
-  function restore(id: string) {
-    const s = stash[id];
-    if (s) {
-      tabs = s.tabs; activeId = s.activeId; seq = s.seq;
-    } else {
-      freshTabs();
     }
   }
   async function reloadSidebar() {
@@ -997,12 +988,10 @@
   function onConnected(e: CustomEvent<{ id: string; config: ConnectionConfig }>) {
     const { id, config } = e.detail;
     workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config }]));
-    stashCurrent();
+    ensureWorkspace(id);
+    setReadOnly(id, shouldStartReadOnly(config.color ?? undefined, config.tag));
     activeConnection.set(config);
     activeConnectionId.set(id);
-    readOnly.set(shouldStartReadOnly(config.color ?? undefined, config.tag));
-    freshTabs();
-    schemaCatalog.set({});
     addOpen = false;
     reloadSidebar();
   }
@@ -1011,19 +1000,14 @@
     if (id === $activeConnectionId) return;
     const ws = $workspaces.find((w) => w.id === id);
     if (!ws) return;
-    stashCurrent();
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
-    readOnly.set(shouldStartReadOnly(ws.config.color ?? undefined, ws.config.tag));
-    restore(id);
-    schemaCatalog.set({});
     reloadSidebar();
   }
 
   function closeWorkspace(id: string) {
     api.disconnect(id).catch(() => {});
-    setInTransaction(id, false);
-    delete stash[id];
+    dropWorkspace(id);
     const remaining = $workspaces.filter((w) => w.id !== id);
     workspaces.set(remaining);
     if ($activeConnectionId !== id) return; // closed a background workspace; nothing else to do
@@ -1031,15 +1015,10 @@
       const next = remaining[0];
       activeConnection.set(next.config);
       activeConnectionId.set(next.id);
-      readOnly.set(shouldStartReadOnly(next.config.color ?? undefined, next.config.tag));
-      restore(next.id);
-      schemaCatalog.set({});
       reloadSidebar();
     } else {
       activeConnectionId.set(null);
       activeConnection.set(null);
-      schemaCatalog.set({});
-      freshTabs();
     }
   }
 
@@ -1058,7 +1037,7 @@
     switch (id) {
       case "new_query_tab": case "new_sql": newTab(); break;
       case "new_table": sidebar?.openAddTable(); break;
-      case "close_tab": if (tabs.length > 1) closeTab(activeId); break;
+      case "close_tab": if (tabs.length > 1 && focusedTabId) closeTab(focusedTabId); break;
       case "new_connection": addOpen = true; break;
       case "switch_schema": sidebar?.focusSchema(); break;
       case "run_query": if (tab.kind === "query") runSql(tab, tab.doc); break;
@@ -1136,8 +1115,9 @@
     return tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement).isContentEditable;
   }
   function cycleTab(dir: number) {
-    const i = tabs.findIndex((t) => t.id === activeId);
-    activeId = tabs[(i + dir + tabs.length) % tabs.length].id;
+    if (!$activeConnectionId || !tabs.length) return;
+    const i = tabs.findIndex((t) => t.id === focusedTabId);
+    focusTab($activeConnectionId, tabs[(i + dir + tabs.length) % tabs.length].id);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -1156,7 +1136,7 @@
     if (!meta && !ctrl && !shift && e.key === " " && !field && (tab.result?.rows.length ?? 0) > 0) {
       e.preventDefault();
       detailOpen = !detailOpen;
-      if (detailOpen && tab.selectedRow === null) { tab.selectedRow = 0; sync(); }
+      if (detailOpen && tab.selectedRow === null) { tab.selectedRow = 0; sync(tab); }
       return;
     }
 
@@ -1170,14 +1150,14 @@
     // ⌘1..9 → jump to tab N.
     if (!ctrl && !shift && /^[1-9]$/.test(e.key)) {
       const i = parseInt(e.key, 10) - 1;
-      if (tabs[i]) { e.preventDefault(); activeId = tabs[i].id; }
+      if (tabs[i] && $activeConnectionId) { e.preventDefault(); focusTab($activeConnectionId, tabs[i].id); }
       return;
     }
     // ⌘F → toggle filters on a table tab (the editor keeps its own find elsewhere).
     if (!ctrl && !shift && e.key.toLowerCase() === "f" && tab.kind === "table") {
       e.preventDefault();
       tab.filtersOpen = !tab.filtersOpen;
-      sync();
+      sync(tab);
     }
     // Everything else (⌘T/E/W/P/R/K/S/I/N, ⌘[/], run, commit, …) is owned by the
     // native menu, which emits a "menu" event handled in handleMenu().
@@ -1211,7 +1191,7 @@
       on:toggleSettings={() => (settingsOpen = !settingsOpen)}
       on:toggleLog={() => (logOpen = !logOpen)}
       on:toggleDetail={() => (detailOpen = !detailOpen)}
-      on:toggleReadOnly={() => readOnly.update((v) => !v)}
+      on:toggleReadOnly={() => { if ($activeConnectionId) setReadOnly($activeConnectionId, !$readOnly); }}
       on:begin={beginTransaction}
       on:commit={commitTransaction}
       on:rollback={rollbackTransaction}
@@ -1230,15 +1210,15 @@
       <main class="main">
         <QueryTabs
           {tabs}
-          {activeId}
-          on:select={(e) => (activeId = e.detail)}
+          activeId={focusedTabId ?? undefined}
+          on:select={(e) => { if ($activeConnectionId) focusTab($activeConnectionId, e.detail); }}
           on:close={(e) => closeTab(e.detail)}
           on:new={newTab}
           on:pin={(e) => pinTab(e.detail)}
         />
 
         {#if tab.kind === "query"}
-          {#key activeId}
+          {#key focusedTabId}
             <QueryEditor
               bind:this={editor}
               running={tab.running}
@@ -1246,7 +1226,7 @@
               schema={$schemaCatalog}
               initialDoc={tab.doc}
               on:run={(e) => runSql(tab, e.detail)}
-              on:change={(e) => (tab.doc = e.detail)}
+              on:change={(e) => { if ($activeConnectionId) updateTab($activeConnectionId, tab.id, (x) => { x.doc = e.detail; }); }}
             />
           {/key}
         {:else}
@@ -1267,7 +1247,7 @@
                   Row
                 </button>
               {/if}
-              <button class="tab" class:active={tab.filtersOpen} on:click={() => { tab.filtersOpen = !tab.filtersOpen; sync(); }}>
+              <button class="tab" class:active={tab.filtersOpen} on:click={() => { tab.filtersOpen = !tab.filtersOpen; sync(tab); }}>
                 Filters{tab.filters.length ? ` (${tab.filters.length})` : ""}
               </button>
             {/if}
@@ -1325,7 +1305,7 @@
                     fkColumns={new Set(tab.foreignKeys.map((f) => f.column))}
                     on:followFk={followFk}
                     on:commit={commitEdits}
-                    on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; if ($settings.showSidebarRowDetail) detailOpen = true; sync(); }}
+                    on:selectRow={(e) => { tab.selectedRow = e.detail; inserting = false; if ($settings.showSidebarRowDetail) detailOpen = true; sync(tab); }}
                     on:sortColumn={(e) => toggleSort(e.detail.col, e.detail.additive)}
                     on:filterBy={quickFilter}
                     on:deleteRows={deleteRows}

@@ -1,12 +1,12 @@
-use serde::{Deserialize, Serialize};
 use secrecy::ExposeSecret;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::DbKind;
 use crate::safety::SafetyLevel;
 use crate::secrets::PasswordSource;
 use crate::ssh::profile::SshRef;
 use crate::tls::{TlsConfig, TlsMode};
-use super::DbKind;
 
 pub const SCHEMA_VERSION: u32 = 2;
 
@@ -37,7 +37,8 @@ pub struct ConnectionConfigV2 {
 
 impl ConnectionConfigV2 {
     pub fn pg_url(&self, secret: &secrecy::SecretString) -> String {
-        let sslmode = self.tls
+        let sslmode = self
+            .tls
             .as_ref()
             .map(|t| pg_mode_str(&t.mode))
             .unwrap_or("prefer");
@@ -65,7 +66,8 @@ impl ConnectionConfigV2 {
     }
 
     pub fn mysql_url(&self, secret: &secrecy::SecretString) -> String {
-        let mode = self.tls
+        let mode = self
+            .tls
             .as_ref()
             .map(|t| mysql_mode_str(&t.mode))
             .unwrap_or("PREFERRED");
@@ -87,7 +89,10 @@ impl ConnectionConfigV2 {
     }
 
     pub fn sqlite_url(&self) -> String {
-        let path = self.file_path.clone().unwrap_or_else(|| self.database.clone());
+        let path = self
+            .file_path
+            .clone()
+            .unwrap_or_else(|| self.database.clone());
         format!("sqlite://{}", path)
     }
 }

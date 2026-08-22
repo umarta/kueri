@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
-  import { activeConnectionId, activeConnection, catalogTables, activeSchema as activeSchemaStore, readOnly } from "../lib/stores/connection";
+  import { activeConnectionId, activeConnection } from "../lib/stores/connection";
+  import { catalogTables, readOnly, setActiveSchema } from "../lib/stores/workspaces";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
   import { queryLog, clearLog, removeLog, type LogEntry } from "../lib/stores/log";
@@ -95,7 +96,7 @@
   let schemas: SchemaInfo[] = [];
   let activeSchema = "";
   // Mirror the selected schema to a store so query tabs can resolve unqualified tables.
-  $: activeSchemaStore.set(activeSchema);
+  $: if ($activeConnectionId) setActiveSchema($activeConnectionId, activeSchema);
   let tables: TableInfo[] = [];
   let loading = true;
   let filter = "";
@@ -167,7 +168,7 @@
           if (t.length) {
             activeSchema = s.name;
             tables = t;
-            catalogTables(t.map((x) => x.name));
+            if ($activeConnectionId) catalogTables($activeConnectionId, t.map((x) => x.name));
             break;
           }
         }
@@ -187,7 +188,7 @@
     }
     try {
       tables = await api.listTables($activeConnectionId, activeSchema);
-      catalogTables(tables.map((t) => t.name));
+      if ($activeConnectionId) catalogTables($activeConnectionId, tables.map((t) => t.name));
       loadError = null;
     } catch (e) {
       loadError = (e as { message?: string })?.message ?? String(e);

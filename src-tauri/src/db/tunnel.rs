@@ -65,7 +65,8 @@ pub async fn open(cfg: &ConnectionConfigV2) -> AppResult<(u16, Child)> {
     match &profile.auth {
         SshAuth::Password { .. } => {
             return Err(AppError::Other(
-                "SSH password auth is not supported in Phase 1. Use a key file or ssh-agent.".into(),
+                "SSH password auth is not supported in Phase 1. Use a key file or ssh-agent."
+                    .into(),
             ));
         }
         SshAuth::KeyFile { path, .. } => {

@@ -33,8 +33,8 @@ pub fn load_connections(app: AppHandle) -> AppResult<Vec<ConnectionConfigV2>> {
 #[tauri::command]
 pub fn save_connections(app: AppHandle, connections: Vec<ConnectionConfigV2>) -> AppResult<()> {
     let path = connections_path(&app)?;
-    let raw = serde_json::to_string_pretty(&connections)
-        .map_err(|e| AppError::Other(e.to_string()))?;
+    let raw =
+        serde_json::to_string_pretty(&connections).map_err(|e| AppError::Other(e.to_string()))?;
     std::fs::write(&path, raw).map_err(|e| AppError::Other(e.to_string()))
 }
 

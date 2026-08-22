@@ -7,10 +7,10 @@ use tokio::sync::Mutex;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 use crate::db::connect::ConnectionConfigV2;
-use crate::tls::TlsMode;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
 use crate::error::{AppError, AppResult};
+use crate::tls::TlsMode;
 
 // tiberius has no built-in pool; a desktop client uses one connection guarded by
 // a mutex (queries need `&mut self`). Good enough for a single-user GUI.

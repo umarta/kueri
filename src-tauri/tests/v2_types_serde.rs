@@ -1,8 +1,18 @@
-use kueri_lib::{safety::SafetyLevel, secrets::PasswordSource, ssh::profile::{SshRef, SshProfile, SshAuth}, tls::{TlsConfig, TlsMode}};
-use kueri_lib::db::{connect::{ConnectionConfigV2, SCHEMA_VERSION}, DbKind};
+use kueri_lib::db::{
+    connect::{ConnectionConfigV2, SCHEMA_VERSION},
+    DbKind,
+};
+use kueri_lib::{
+    safety::SafetyLevel,
+    secrets::PasswordSource,
+    ssh::profile::{SshAuth, SshProfile, SshRef},
+    tls::{TlsConfig, TlsMode},
+};
 use uuid::Uuid;
 
-fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(value: T) {
+fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+    value: T,
+) {
     let json = serde_json::to_string(&value).unwrap();
     let back: T = serde_json::from_str(&json).unwrap();
     assert_eq!(value, back);
@@ -10,7 +20,12 @@ fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std
 
 #[test]
 fn tls_config_roundtrip() {
-    roundtrip(TlsConfig { mode: TlsMode::VerifyFull, ca_path: Some("/tmp/ca.pem".into()), cert_path: None, key_path: None });
+    roundtrip(TlsConfig {
+        mode: TlsMode::VerifyFull,
+        ca_path: Some("/tmp/ca.pem".into()),
+        cert_path: None,
+        key_path: None,
+    });
 }
 
 #[test]
@@ -28,10 +43,21 @@ fn safety_level_roundtrip() {
 fn password_source_variants_roundtrip() {
     roundtrip(PasswordSource::Plain);
     roundtrip(PasswordSource::Keychain);
-    roundtrip(PasswordSource::Env { name: "PGPASSWORD".into() });
-    roundtrip(PasswordSource::OnePassword { item: "prod-db".into(), field: "password".into() });
-    roundtrip(PasswordSource::Vault { path: "secret/db".into(), field: "password".into() });
-    roundtrip(PasswordSource::AwsSm { arn: "arn:aws:secretsmanager:us-east-1:0:secret:x".into(), region: "us-east-1".into() });
+    roundtrip(PasswordSource::Env {
+        name: "PGPASSWORD".into(),
+    });
+    roundtrip(PasswordSource::OnePassword {
+        item: "prod-db".into(),
+        field: "password".into(),
+    });
+    roundtrip(PasswordSource::Vault {
+        path: "secret/db".into(),
+        field: "password".into(),
+    });
+    roundtrip(PasswordSource::AwsSm {
+        arn: "arn:aws:secretsmanager:us-east-1:0:secret:x".into(),
+        region: "us-east-1".into(),
+    });
 }
 
 #[test]
@@ -61,7 +87,12 @@ fn connection_config_v2_roundtrip() {
         database: "analytics".into(),
         user: "readonly".into(),
         password: PasswordSource::Keychain,
-        tls: Some(TlsConfig { mode: TlsMode::Require, ca_path: None, cert_path: None, key_path: None }),
+        tls: Some(TlsConfig {
+            mode: TlsMode::Require,
+            ca_path: None,
+            cert_path: None,
+            key_path: None,
+        }),
         ssh: None,
         safety: SafetyLevel::ConfirmDestructive,
         color: Some("prod".into()),

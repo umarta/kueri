@@ -1,8 +1,8 @@
 //! One-shot v1 → v2 connection schema migration.
 
-use std::path::{Path, PathBuf};
 use keyring::Entry;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::db::connect::{ConnectionConfigV2, SCHEMA_VERSION};
@@ -98,13 +98,18 @@ pub fn migrate_if_needed(path: &Path) -> AppResult<Vec<ConnectionConfigV2>> {
     let mut migrated: Vec<ConnectionConfigV2> = Vec::with_capacity(array.len());
     for rec in array {
         // Only migrate records that look like v1 (schema_version missing/<2)
-        let is_v1 = rec.as_object()
+        let is_v1 = rec
+            .as_object()
             .and_then(|o| o.get("schema_version"))
             .and_then(Value::as_u64)
             .map(|v| v < 2)
             .unwrap_or(true);
         if is_v1 {
-            let old_id = rec.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+            let old_id = rec
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             let v2 = migrate_record(&rec)?;
             let _ = rekey_keychain(&old_id, v2.id);
             migrated.push(v2);
@@ -115,15 +120,17 @@ pub fn migrate_if_needed(path: &Path) -> AppResult<Vec<ConnectionConfigV2>> {
         }
     }
 
-    let serialized = serde_json::to_string_pretty(&migrated)
-        .map_err(|e| AppError::Other(e.to_string()))?;
+    let serialized =
+        serde_json::to_string_pretty(&migrated).map_err(|e| AppError::Other(e.to_string()))?;
     std::fs::write(path, serialized).map_err(|e| AppError::Other(e.to_string()))?;
 
     Ok(migrated)
 }
 
 pub fn migrate_record(v1: &Value) -> AppResult<ConnectionConfigV2> {
-    let obj = v1.as_object().ok_or_else(|| AppError::Other("record not an object".into()))?;
+    let obj = v1
+        .as_object()
+        .ok_or_else(|| AppError::Other("record not an object".into()))?;
 
     let old_id = obj
         .get("id")
@@ -145,34 +152,68 @@ pub fn migrate_record(v1: &Value) -> AppResult<ConnectionConfigV2> {
     Ok(ConnectionConfigV2 {
         id,
         schema_version: SCHEMA_VERSION,
-        name: obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+        name: obj
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         kind,
-        host: obj.get("host").and_then(Value::as_str).unwrap_or_default().to_string(),
+        host: obj
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         port: obj.get("port").and_then(Value::as_u64).unwrap_or(0) as u16,
-        database: obj.get("database").and_then(Value::as_str).unwrap_or_default().to_string(),
-        user: obj.get("user").and_then(Value::as_str).unwrap_or_default().to_string(),
+        database: obj
+            .get("database")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        user: obj
+            .get("user")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         password: PasswordSource::Keychain,
         tls,
         ssh,
         safety: SafetyLevel::default(),
         color: obj.get("color").and_then(Value::as_str).map(str::to_string),
-        tags: obj.get("tag").and_then(Value::as_str).map(|t| vec![t.to_string()]).unwrap_or_default(),
-        file_path: obj.get("file_path").and_then(Value::as_str).map(str::to_string),
+        tags: obj
+            .get("tag")
+            .and_then(Value::as_str)
+            .map(|t| vec![t.to_string()])
+            .unwrap_or_default(),
+        file_path: obj
+            .get("file_path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
 fn migrate_tls(obj: &serde_json::Map<String, Value>) -> Option<TlsConfig> {
     let ssl_enabled = obj.get("ssl").and_then(Value::as_bool).unwrap_or(false);
     let mode_str = obj.get("ssl_mode").and_then(Value::as_str);
-    if !ssl_enabled && mode_str.is_none() && obj.get("ssl_ca").is_none() && obj.get("ssl_cert").is_none() && obj.get("ssl_key").is_none() {
+    if !ssl_enabled
+        && mode_str.is_none()
+        && obj.get("ssl_ca").is_none()
+        && obj.get("ssl_cert").is_none()
+        && obj.get("ssl_key").is_none()
+    {
         return None;
     }
     let mode = mode_str.map(parse_tls_mode).unwrap_or(TlsMode::Require);
     Some(TlsConfig {
         mode,
         ca_path: obj.get("ssl_ca").and_then(Value::as_str).map(PathBuf::from),
-        cert_path: obj.get("ssl_cert").and_then(Value::as_str).map(PathBuf::from),
-        key_path: obj.get("ssl_key").and_then(Value::as_str).map(PathBuf::from),
+        cert_path: obj
+            .get("ssl_cert")
+            .and_then(Value::as_str)
+            .map(PathBuf::from),
+        key_path: obj
+            .get("ssl_key")
+            .and_then(Value::as_str)
+            .map(PathBuf::from),
     })
 }
 
@@ -183,26 +224,46 @@ fn parse_tls_mode(s: &str) -> TlsMode {
         "prefer" | "preferred" => TlsMode::Prefer,
         "require" | "required" => TlsMode::Require,
         "verify-ca" | "verify_ca" => TlsMode::VerifyCa,
-        "verify-full" | "verify_full" | "verify-identity" | "verify_identity" => TlsMode::VerifyFull,
+        "verify-full" | "verify_full" | "verify-identity" | "verify_identity" => {
+            TlsMode::VerifyFull
+        }
         _ => TlsMode::Require,
     }
 }
 
 fn migrate_ssh(obj: &serde_json::Map<String, Value>) -> Option<SshRef> {
-    if !obj.get("ssh_enabled").and_then(Value::as_bool).unwrap_or(false) {
+    if !obj
+        .get("ssh_enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         return None;
     }
-    let key_path = obj.get("ssh_key").and_then(Value::as_str).map(PathBuf::from);
+    let key_path = obj
+        .get("ssh_key")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
     let auth = match key_path {
-        Some(path) => SshAuth::KeyFile { path, passphrase: None },
+        Some(path) => SshAuth::KeyFile {
+            path,
+            passphrase: None,
+        },
         None => SshAuth::Agent,
     };
     Some(SshRef::Inline(SshProfile {
         id: Uuid::new_v4(),
         name: "migrated".to_string(),
-        host: obj.get("ssh_host").and_then(Value::as_str).unwrap_or_default().to_string(),
+        host: obj
+            .get("ssh_host")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         port: obj.get("ssh_port").and_then(Value::as_u64).unwrap_or(22) as u16,
-        user: obj.get("ssh_user").and_then(Value::as_str).unwrap_or_default().to_string(),
+        user: obj
+            .get("ssh_user")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         auth,
         jump: None,
     }))
@@ -211,11 +272,11 @@ fn migrate_ssh(obj: &serde_json::Map<String, Value>) -> Option<SshRef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-    use crate::tls::TlsMode;
+    use crate::safety::SafetyLevel;
     use crate::secrets::PasswordSource;
     use crate::ssh::profile::{SshAuth, SshRef};
-    use crate::safety::SafetyLevel;
+    use crate::tls::TlsMode;
+    use serde_json::json;
     use std::io::Write;
     use tempfile::TempDir;
 
@@ -223,11 +284,18 @@ mod tests {
     fn backup_creates_bak_file() {
         let dir = TempDir::new().unwrap();
         let src = dir.path().join("connections.json");
-        std::fs::File::create(&src).unwrap().write_all(b"[]").unwrap();
+        std::fs::File::create(&src)
+            .unwrap()
+            .write_all(b"[]")
+            .unwrap();
 
         let backup = backup_v1_file(&src).unwrap();
         assert!(backup.exists());
-        assert!(backup.file_name().unwrap().to_string_lossy().starts_with("connections.v1.bak"));
+        assert!(backup
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("connections.v1.bak"));
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), "[]");
     }
 
@@ -235,7 +303,10 @@ mod tests {
     fn backup_names_suffix_when_bak_exists() {
         let dir = TempDir::new().unwrap();
         let src = dir.path().join("connections.json");
-        std::fs::File::create(&src).unwrap().write_all(b"[]").unwrap();
+        std::fs::File::create(&src)
+            .unwrap()
+            .write_all(b"[]")
+            .unwrap();
         let first = backup_v1_file(&src).unwrap();
         let second = backup_v1_file(&src).unwrap();
         assert_ne!(first, second);
@@ -302,9 +373,18 @@ mod tests {
         let migrated = migrate_record(&v1).unwrap();
         let tls = migrated.tls.unwrap();
         assert_eq!(tls.mode, TlsMode::VerifyFull);
-        assert_eq!(tls.ca_path.as_deref(), Some(std::path::Path::new("/tmp/ca.pem")));
-        assert_eq!(tls.cert_path.as_deref(), Some(std::path::Path::new("/tmp/client.crt")));
-        assert_eq!(tls.key_path.as_deref(), Some(std::path::Path::new("/tmp/client.key")));
+        assert_eq!(
+            tls.ca_path.as_deref(),
+            Some(std::path::Path::new("/tmp/ca.pem"))
+        );
+        assert_eq!(
+            tls.cert_path.as_deref(),
+            Some(std::path::Path::new("/tmp/client.crt"))
+        );
+        assert_eq!(
+            tls.key_path.as_deref(),
+            Some(std::path::Path::new("/tmp/client.key"))
+        );
     }
 
     #[test]
@@ -338,7 +418,9 @@ mod tests {
         v1["ssh_port"] = json!(22);
         v1["ssh_user"] = json!("ec2-user");
         let migrated = migrate_record(&v1).unwrap();
-        let SshRef::Inline(profile) = migrated.ssh.unwrap() else { panic!() };
+        let SshRef::Inline(profile) = migrated.ssh.unwrap() else {
+            panic!()
+        };
         assert!(matches!(profile.auth, SshAuth::Agent));
     }
 
@@ -396,7 +478,10 @@ mod tests {
         let out = migrate_if_needed(&path).unwrap();
         assert_eq!(out.len(), 1);
         // No backup file created because no migration happened
-        let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().filter_map(Result::ok).collect();
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
         assert_eq!(entries.len(), 1, "no backup expected");
     }
 
