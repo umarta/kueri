@@ -4,7 +4,7 @@
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  let section: "general" | "shortcuts" | "about" = "general";
+  let section: "general" | "shortcuts" | "about" | "ssh-profiles" = "general";
 
   const shortcuts: { keys: string; label: string }[] = [
     { keys: "⌘P", label: "Open anything (search a table)" },
@@ -43,6 +43,7 @@
       <button class:active={section === "general"} on:click={() => (section = "general")}>General</button>
       <button class:active={section === "shortcuts"} on:click={() => (section = "shortcuts")}>Shortcuts</button>
       <button class:active={section === "about"} on:click={() => (section = "about")}>About</button>
+      <button class:active={section === "ssh-profiles"} on:click={() => (section = "ssh-profiles")}>SSH Profiles</button>
       <div class="sp"></div>
       <button class="x" on:click={() => dispatch("close")} aria-label="Close" title="Close (Esc)">
         <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -81,6 +82,10 @@
             <li><span class="combo">{s.keys}</span><span class="act">{s.label}</span></li>
           {/each}
         </ul>
+      {:else if section === "ssh-profiles"}
+        <div class="ssh-profiles-placeholder">
+          SSH profile management coming soon.
+        </div>
       {:else}
         <div class="about">
           <div class="logo">Kueri</div>
