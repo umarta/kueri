@@ -31,6 +31,7 @@ impl AwsSmResolver<'_> {
             .arg("SecretString")
             .arg("--output")
             .arg("text");
+        cmd.kill_on_drop(true);
         cmd
     }
 }

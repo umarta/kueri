@@ -25,6 +25,7 @@ impl VaultResolver<'_> {
             .arg("get")
             .arg(format!("-field={}", self.field))
             .arg(self.path);
+        cmd.kill_on_drop(true);
         cmd
     }
 }

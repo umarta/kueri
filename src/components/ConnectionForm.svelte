@@ -33,6 +33,9 @@
 
   function onPasswordKindChange(e: Event) {
     const kind = (e.currentTarget as HTMLSelectElement).value;
+    if (kind !== "plain" && kind !== "keychain") {
+      plaintext = "";
+    }
     switch (kind) {
       case "plain":
         config.password = { kind: "plain" };
@@ -235,7 +238,7 @@
     try {
       const cfg = buildConfig();
       const id = await api.connect(cfg);
-      await upsertConnection(cfg, plaintext || undefined);
+      await upsertConnection(cfg, config.password.kind === "keychain" ? plaintext || undefined : undefined);
       dispatch("connected", id);
     } catch (e) {
       error = String(e);

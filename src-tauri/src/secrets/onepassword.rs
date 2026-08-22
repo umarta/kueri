@@ -29,6 +29,7 @@ impl OnePasswordResolver<'_> {
             .arg("--fields")
             .arg(self.field)
             .arg("--reveal");
+        cmd.kill_on_drop(true);
         cmd
     }
 }
