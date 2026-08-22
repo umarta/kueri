@@ -1,6 +1,7 @@
 //! One-shot v1 → v2 connection schema migration.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use keyring::Entry;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -15,6 +16,59 @@ use crate::tls::{TlsConfig, TlsMode};
 /// Fixed namespace for deterministic v5 UUID derivation from v1 string ids.
 /// MUST NOT change once shipped.
 pub const MIGRATION_NAMESPACE: Uuid = Uuid::from_u128(0xa06f4d31_4d6c_4e21_9ad4_2f8d1c3e4c11);
+
+const KEYRING_SERVICE: &str = "dev.kueri.app";
+
+pub fn backup_v1_file(src: &Path) -> AppResult<PathBuf> {
+    let parent = src.parent().unwrap_or_else(|| Path::new("."));
+    let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+    let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("json");
+
+    let primary = parent.join(format!("{stem}.v1.bak.{ext}"));
+    if !primary.exists() {
+        std::fs::copy(src, &primary).map_err(|e| AppError::Other(format!("backup: {e}")))?;
+        return Ok(primary);
+    }
+    for n in 1..1000 {
+        let candidate = parent.join(format!("{stem}.v1.bak-{n}.{ext}"));
+        if !candidate.exists() {
+            std::fs::copy(src, &candidate).map_err(|e| AppError::Other(format!("backup: {e}")))?;
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::Other("too many v1 backups".into()))
+}
+
+/// Re-key a keychain entry from the v1 string id to the v2 uuid-string id.
+/// Best-effort: failure returns Ok(()) after logging. Users can re-enter passwords.
+pub fn rekey_keychain(old_id: &str, new_id: Uuid) -> AppResult<()> {
+    let new_id_str = new_id.to_string();
+    if old_id == new_id_str {
+        return Ok(()); // already the same
+    }
+    let old_entry = match Entry::new(KEYRING_SERVICE, old_id) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("keychain: could not open old entry '{old_id}': {e}");
+            return Ok(());
+        }
+    };
+    let password = match old_entry.get_password() {
+        Ok(p) => p,
+        Err(keyring::Error::NoEntry) => return Ok(()),
+        Err(e) => {
+            eprintln!("keychain: could not read old entry '{old_id}': {e}");
+            return Ok(());
+        }
+    };
+    let new_entry = Entry::new(KEYRING_SERVICE, &new_id_str)
+        .map_err(|e| AppError::Other(format!("keychain new entry: {e}")))?;
+    new_entry
+        .set_password(&password)
+        .map_err(|e| AppError::Other(format!("keychain set: {e}")))?;
+    let _ = old_entry.delete_credential();
+    Ok(())
+}
 
 pub fn migrate_record(v1: &Value) -> AppResult<ConnectionConfigV2> {
     let obj = v1.as_object().ok_or_else(|| AppError::Other("record not an object".into()))?;
@@ -110,6 +164,31 @@ mod tests {
     use crate::secrets::PasswordSource;
     use crate::ssh::profile::{SshAuth, SshRef};
     use crate::safety::SafetyLevel;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[test]
+    fn backup_creates_bak_file() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("connections.json");
+        std::fs::File::create(&src).unwrap().write_all(b"[]").unwrap();
+
+        let backup = backup_v1_file(&src).unwrap();
+        assert!(backup.exists());
+        assert!(backup.file_name().unwrap().to_string_lossy().starts_with("connections.v1.bak"));
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "[]");
+    }
+
+    #[test]
+    fn backup_names_suffix_when_bak_exists() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("connections.json");
+        std::fs::File::create(&src).unwrap().write_all(b"[]").unwrap();
+        let first = backup_v1_file(&src).unwrap();
+        let second = backup_v1_file(&src).unwrap();
+        assert_ne!(first, second);
+        assert!(second.exists() && first.exists());
+    }
 
     fn v1_minimal() -> serde_json::Value {
         json!({
