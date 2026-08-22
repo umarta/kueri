@@ -6,31 +6,123 @@ export type DbKind =
   | "redis"
   | "mongodb";
 
-export interface ConnectionConfig {
+// ---------------------------------------------------------------------------
+// V2 connection sub-types — mirror the exact JSON shape emitted by the Rust
+// backend (serde). Field names and string literals must match Rust's serde
+// output exactly; the compiler cannot catch mismatches at runtime.
+// ---------------------------------------------------------------------------
+
+/** TLS connection security level. Mirrors `TlsMode` in `src-tauri/src/tls.rs`. */
+export type TlsMode =
+  | "disable"
+  | "allow"
+  | "prefer"
+  | "require"
+  | "verify-ca"
+  | "verify-full";
+
+/** TLS configuration block. Mirrors `TlsConfig` in `src-tauri/src/tls.rs`. */
+export interface TlsConfig {
+  mode: TlsMode;
+  ca_path?: string | null;
+  cert_path?: string | null;
+  key_path?: string | null;
+}
+
+/**
+ * How a password is sourced. Mirrors `PasswordSource` in
+ * `src-tauri/src/secrets/mod.rs` (adjacently-tagged, kebab-case, with
+ * explicit renames for `onepassword` and `aws-sm`).
+ */
+export type PasswordSource =
+  | { kind: "plain" }
+  | { kind: "keychain" }
+  | { kind: "env"; name: string }
+  | { kind: "onepassword"; item: string; field: string }
+  | { kind: "vault"; path: string; field: string }
+  | { kind: "aws-sm"; arn: string; region: string };
+
+/**
+ * SSH authentication method. Mirrors `SshAuth` in
+ * `src-tauri/src/ssh/profile.rs` (adjacently-tagged, kebab-case).
+ */
+export type SshAuth =
+  | { kind: "password"; source: PasswordSource }
+  | { kind: "key-file"; path: string; passphrase: PasswordSource | null }
+  | { kind: "agent" };
+
+/**
+ * SSH connection profile. Mirrors `SshProfile` in
+ * `src-tauri/src/ssh/profile.rs`.
+ */
+export interface SshProfile {
   id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  auth: SshAuth;
+  jump?: string | null;
+}
+
+/**
+ * Reference to an SSH profile — either by UUID or inline. Mirrors `SshRef`
+ * in `src-tauri/src/ssh/profile.rs` (adjacently-tagged with `tag`/`content`,
+ * kebab-case). Verified JSON shape from Task 2:
+ *   - `{"kind":"profile","value":"<uuid>"}`
+ *   - `{"kind":"inline","value":{...SshProfile}}`
+ */
+export type SshRef =
+  | { kind: "profile"; value: string }
+  | { kind: "inline"; value: SshProfile };
+
+/**
+ * Query safety guard level. Mirrors `SafetyLevel` in
+ * `src-tauri/src/safety.rs` (kebab-case).
+ */
+export type SafetyLevel =
+  | "off"
+  | "warn"
+  | "confirm-destructive"
+  | "confirm-writes"
+  | "confirm-ddl"
+  | "read-only";
+
+/**
+ * V2 connection configuration. Mirrors `ConnectionConfigV2` in
+ * `src-tauri/src/db/connect.rs`. Required fields match the Rust struct
+ * (no `#[serde(default)]` on id, schema_version, name, kind, password,
+ * safety, tags). Optional/nullable fields use `#[serde(default)]` in Rust.
+ *
+ * UI-only fields (`tag`, `color`, `group`) are not sent to the backend —
+ * serde ignores unknown fields. They are preserved here for the transition
+ * period (Task 10 consumers still reference them).
+ */
+export interface ConnectionConfig {
+  // --- wire fields (v2) ---
+  id: string;
+  schema_version: number;
   name: string;
   kind: DbKind;
   host: string;
   port: number;
   database: string;
   user: string;
-  password: string;
-  ssl: boolean;
-  ssl_mode?: string | null;
-  ssl_ca?: string | null;
-  ssl_cert?: string | null;
-  ssl_key?: string | null;
+  password: PasswordSource;
+  tls?: TlsConfig | null;
+  ssh?: SshRef | null;
+  safety: SafetyLevel;
+  /** Backend-side tags (migrated from the old `tag` field). */
+  tags: string[];
   file_path?: string | null;
-  ssh_enabled?: boolean;
-  ssh_host?: string;
-  ssh_port?: number;
-  ssh_user?: string;
-  ssh_key?: string | null;
-  // UI-only metadata (ignored by the Rust backend — serde drops unknown fields).
-  // `tag` is the environment label, `color` is its status-dot token name,
-  // `group` is an optional folder in the connection list.
+  // --- UI-only metadata (ignored by the Rust backend — serde drops unknown fields) ---
+  // `tag` is the environment label, `color` is its status-dot token name
+  // (the Rust wire also emits `color` as a nullable string; StatusColor is a
+  // subset of string so the same field covers both), `group` is an optional
+  // folder in the connection list.
+  /** Environment color label. Wire type is `string | null`; UI constrains to StatusColor. */
+  color?: StatusColor | null;
   tag?: string;
-  color?: StatusColor;
   group?: string;
 }
 
