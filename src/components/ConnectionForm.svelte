@@ -105,6 +105,9 @@
   // Ensure safety has a default when not set (e.g. older persisted configs).
   $: if (config && !config.safety) config.safety = "confirm-destructive";
 
+  // Guard: profile mode selected but no profile chosen (or profiles unavailable).
+  $: sshProfileIncomplete = sshMode === "profile" && !selectedProfileId;
+
   // Load plaintext from keychain when editing an existing connection.
   resolvePassword(config).then((p) => { if (p) plaintext = p; });
 
@@ -313,20 +316,24 @@
         </div>
 
         {#if sshMode === "profile"}
-          <label class="row">
-            <span class="lbl">Profile</span>
-            <select class="field" bind:value={selectedProfileId}>
-              <option value={null}>— select a profile —</option>
-              {#each profiles as p (p.id)}
-                <option value={p.id}>{p.name} ({p.user}@{p.host}:{p.port})</option>
-              {/each}
-            </select>
-          </label>
-          <p class="ssh-note">
-            <button type="button" class="link-btn" on:click={openSshProfilesInSettings}>
-              Manage profiles in Settings…
-            </button>
-          </p>
+          {#if profiles.length === 0}
+            <div class="banner ssh-warn">⚠ SSH profile list unavailable — save disabled to prevent data loss.</div>
+          {:else}
+            <label class="row">
+              <span class="lbl">Profile</span>
+              <select class="field" bind:value={selectedProfileId}>
+                <option value={null}>— select a profile —</option>
+                {#each profiles as p (p.id)}
+                  <option value={p.id}>{p.name} ({p.user}@{p.host}:{p.port})</option>
+                {/each}
+              </select>
+            </label>
+            <p class="ssh-note">
+              <button type="button" class="link-btn" on:click={openSshProfilesInSettings}>
+                Manage profiles in Settings…
+              </button>
+            </p>
+          {/if}
         {/if}
 
         {#if sshMode === "inline"}
@@ -362,12 +369,22 @@
   </div>
 
   <svelte:fragment slot="footer">
-    <button class="btn" on:click={test} disabled={busy}>
+    <button class="btn" on:click={test} disabled={busy || sshProfileIncomplete}>
       {busy ? "Testing…" : "Test"}
     </button>
     <div class="spacer"></div>
-    <button class="btn" on:click={save} disabled={busy}>Save</button>
-    <button class="btn btn-primary" on:click={connect} disabled={busy}>
+    <button
+      class="btn"
+      on:click={save}
+      disabled={busy || sshProfileIncomplete}
+      title={sshProfileIncomplete ? "Select an SSH profile or switch to Off/Inline" : undefined}
+    >Save</button>
+    <button
+      class="btn btn-primary"
+      on:click={connect}
+      disabled={busy || sshProfileIncomplete}
+      title={sshProfileIncomplete ? "Select an SSH profile or switch to Off/Inline" : undefined}
+    >
       {busy ? "Connecting…" : "Connect"}
     </button>
   </svelte:fragment>
@@ -420,6 +437,7 @@
   }
   .banner.err { background: var(--danger-soft); color: var(--danger); }
   .banner.ok { background: rgba(48, 209, 88, 0.13); color: var(--success); }
+  .banner.ssh-warn { background: rgba(255, 190, 50, 0.15); color: var(--warn, #b87a00); font-family: inherit; font-size: 12px; }
 
   .spacer { flex: 1; }
 </style>
