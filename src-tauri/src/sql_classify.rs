@@ -43,7 +43,7 @@ pub fn classify(sql: &str) -> Vec<SqlEffect> {
         .collect()
 }
 
-fn classify_one(statement: &str) -> SqlEffect {
+pub fn classify_one(statement: &str) -> SqlEffect {
     // Take the first alphabetic token (case-insensitive), match against verbs.
     let verb: String = statement
         .chars()
