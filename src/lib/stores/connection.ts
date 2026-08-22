@@ -93,21 +93,24 @@ export const savedConnections = writable<ConnectionConfig[]>([]);
 })();
 
 function persist(list: ConnectionConfig[]) {
-  // Never write passwords to disk — those go to the keychain.
-  const safe = list.map(({ password: _pw, ...rest }) => rest);
+  // password is now PasswordSource (a tagged enum), never plaintext — safe to serialize.
   if (isTauri) {
-    api.saveConnections(safe).catch(() => {});
+    api.saveConnections(list).catch(() => {});
   } else {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(safe));
+      localStorage.setItem(LS_KEY, JSON.stringify(list));
     } catch {
       /* ignore */
     }
   }
 }
 
-/** Insert or update a connection, persist it, and stash its password in the keychain. */
-export async function upsertConnection(conn: ConnectionConfig) {
+/** Insert or update a connection, persist it, and stash its password in the keychain.
+ *  Pass `plaintext` (from a form input) to write the password to the keychain.
+ *  The `conn.password` field should already be `{ kind: "keychain" }` when a
+ *  plaintext string is provided.
+ */
+export async function upsertConnection(conn: ConnectionConfig, plaintext?: string) {
   savedConnections.update((list) => {
     const i = list.findIndex((c) => c.id === conn.id);
     if (i === -1) return [...list, conn];
@@ -116,11 +119,11 @@ export async function upsertConnection(conn: ConnectionConfig) {
     return next;
   });
   persist(get(savedConnections));
-  if (isTauri && conn.password) {
+  if (isTauri && plaintext) {
     try {
-      await api.secretSet(conn.id, conn.password);
+      await api.secretSet(conn.id, plaintext);
     } catch {
-      /* keychain unavailable — password stays in-memory for the session */
+      /* keychain unavailable */
     }
   }
 }
@@ -137,9 +140,8 @@ export async function removeConnection(id: string) {
   }
 }
 
-/** Resolve a connection's password: in-memory if present, else from the keychain. */
+/** Resolve a connection's password from the keychain. */
 export async function resolvePassword(conn: ConnectionConfig): Promise<string> {
-  if (conn.password) return conn.password;
   if (isTauri) {
     try {
       return (await api.secretGet(conn.id)) ?? "";

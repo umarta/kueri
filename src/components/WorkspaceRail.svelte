@@ -22,7 +22,7 @@
           {#if w.id === activeId}<span class="bar" aria-hidden="true"></span>{/if}
           <span class="badge" style="--c: {meta.color}">
             {meta.abbr}
-            <span class="status" style="--s: {statusVar(w.config.color)}"></span>
+            <span class="status" style="--s: {statusVar(w.config.color ?? undefined)}"></span>
           </span>
           <span class="name">{w.config.name}</span>
         </button>
