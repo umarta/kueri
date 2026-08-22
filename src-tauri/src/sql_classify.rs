@@ -28,7 +28,9 @@ fn classify_one(statement: &str) -> SqlEffect {
         .collect::<String>()
         .to_ascii_uppercase();
     match verb.as_str() {
-        "SELECT" | "SHOW" | "EXPLAIN" | "WITH" | "PRAGMA" | "VALUES" | "DESCRIBE" | "DESC" => SqlEffect::Read,
+        "SELECT" | "SHOW" | "EXPLAIN" | "WITH" | "PRAGMA" | "VALUES" | "DESCRIBE" | "DESC" => {
+            SqlEffect::Read
+        }
         "INSERT" | "UPDATE" | "DELETE" | "REPLACE" | "MERGE" => SqlEffect::Write,
         "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "RENAME" => SqlEffect::Ddl,
         _ => SqlEffect::Unknown,
@@ -128,7 +130,10 @@ mod tests {
     fn show_explain_with_pragma_values_are_read() {
         assert_eq!(classify("SHOW TABLES"), vec![SqlEffect::Read]);
         assert_eq!(classify("EXPLAIN SELECT 1"), vec![SqlEffect::Read]);
-        assert_eq!(classify("WITH x AS (SELECT 1) SELECT * FROM x"), vec![SqlEffect::Read]);
+        assert_eq!(
+            classify("WITH x AS (SELECT 1) SELECT * FROM x"),
+            vec![SqlEffect::Read]
+        );
         assert_eq!(classify("PRAGMA table_info(t)"), vec![SqlEffect::Read]);
         assert_eq!(classify("VALUES (1), (2)"), vec![SqlEffect::Read]);
     }
@@ -144,7 +149,10 @@ mod tests {
     fn create_drop_alter_truncate_rename_are_ddl() {
         assert_eq!(classify("CREATE TABLE t (x int)"), vec![SqlEffect::Ddl]);
         assert_eq!(classify("DROP TABLE t"), vec![SqlEffect::Ddl]);
-        assert_eq!(classify("ALTER TABLE t ADD COLUMN y int"), vec![SqlEffect::Ddl]);
+        assert_eq!(
+            classify("ALTER TABLE t ADD COLUMN y int"),
+            vec![SqlEffect::Ddl]
+        );
         assert_eq!(classify("TRUNCATE t"), vec![SqlEffect::Ddl]);
         assert_eq!(classify("RENAME TABLE a TO b"), vec![SqlEffect::Ddl]);
     }
@@ -152,7 +160,10 @@ mod tests {
     #[test]
     fn multi_statement_returns_per_statement_effects() {
         let effects = classify("SELECT 1; INSERT INTO t VALUES (1); CREATE TABLE u (x int)");
-        assert_eq!(effects, vec![SqlEffect::Read, SqlEffect::Write, SqlEffect::Ddl]);
+        assert_eq!(
+            effects,
+            vec![SqlEffect::Read, SqlEffect::Write, SqlEffect::Ddl]
+        );
     }
 
     #[test]

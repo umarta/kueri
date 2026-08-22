@@ -1,7 +1,7 @@
 //! SSH profile definitions (Phase 1: types + serialization only).
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::secrets::PasswordSource;
@@ -9,8 +9,14 @@ use crate::secrets::PasswordSource;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SshAuth {
-    Password { source: PasswordSource },
-    KeyFile { path: PathBuf, #[serde(default)] passphrase: Option<PasswordSource> },
+    Password {
+        source: PasswordSource,
+    },
+    KeyFile {
+        path: PathBuf,
+        #[serde(default)]
+        passphrase: Option<PasswordSource>,
+    },
     Agent,
 }
 

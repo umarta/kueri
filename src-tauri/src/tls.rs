@@ -1,7 +1,7 @@
 //! TLS connection settings (hoisted from the v1 flat ssl_* fields).
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

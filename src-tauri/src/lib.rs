@@ -3,13 +3,13 @@ mod commands;
 pub mod db;
 mod error;
 mod menu;
+mod migration;
 mod persist;
 mod pgtools;
-mod migration;
 pub mod safety;
-mod sql_classify;
 mod schema_cache;
 pub mod secrets;
+mod sql_classify;
 pub mod ssh {
     pub mod profile;
 }

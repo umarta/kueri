@@ -48,14 +48,16 @@ pub async fn connect(state: State<'_, AppState>, config: ConnectionConfigV2) -> 
 
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.remove(uuid);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn list_schemas(state: State<'_, AppState>, id: String) -> AppResult<Vec<SchemaInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     let driver = state.get(uuid)?;
     state.schema_cache.schemas(uuid, driver.as_ref()).await
 }
@@ -66,9 +68,13 @@ pub async fn list_tables(
     id: String,
     schema: String,
 ) -> AppResult<Vec<TableInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     let driver = state.get(uuid)?;
-    state.schema_cache.tables(uuid, &schema, driver.as_ref()).await
+    state
+        .schema_cache
+        .tables(uuid, &schema, driver.as_ref())
+        .await
 }
 
 #[tauri::command]
@@ -78,9 +84,13 @@ pub async fn list_columns(
     schema: String,
     table: String,
 ) -> AppResult<Vec<ColumnInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     let driver = state.get(uuid)?;
-    state.schema_cache.columns(uuid, &schema, &table, driver.as_ref()).await
+    state
+        .schema_cache
+        .columns(uuid, &schema, &table, driver.as_ref())
+        .await
 }
 
 #[tauri::command]
@@ -90,7 +100,8 @@ pub async fn table_ddl(
     schema: String,
     table: String,
 ) -> AppResult<String> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.table_ddl(&schema, &table).await
 }
 
@@ -101,7 +112,8 @@ pub async fn view_definition(
     schema: String,
     name: String,
 ) -> AppResult<String> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.view_definition(&schema, &name).await
 }
 
@@ -112,7 +124,8 @@ pub async fn list_objects(
     schema: String,
     kind: String,
 ) -> AppResult<Vec<String>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_objects(&schema, &kind).await
 }
 
@@ -124,7 +137,8 @@ pub async fn object_definition(
     name: String,
     kind: String,
 ) -> AppResult<String> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .object_definition(&schema, &name, &kind)
@@ -138,7 +152,8 @@ pub async fn foreign_keys(
     schema: String,
     table: String,
 ) -> AppResult<Vec<ForeignKey>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_foreign_keys(&schema, &table).await
 }
 
@@ -149,7 +164,8 @@ pub async fn list_indexes(
     schema: String,
     table: String,
 ) -> AppResult<Vec<IndexInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_indexes(&schema, &table).await
 }
 
@@ -163,7 +179,8 @@ pub async fn create_index(
     columns: Vec<String>,
     unique: bool,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .create_index(&schema, &table, &name, &columns, unique)
@@ -178,7 +195,8 @@ pub async fn drop_index(
     table: String,
     name: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.drop_index(&schema, &table, &name).await
 }
 
@@ -195,7 +213,8 @@ pub async fn add_foreign_key(
     name: String,
     validate: bool,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .add_foreign_key(
@@ -217,7 +236,8 @@ pub async fn primary_keys(
     schema: String,
     table: String,
 ) -> AppResult<Vec<String>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_primary_keys(&schema, &table).await
 }
 
@@ -228,7 +248,8 @@ pub async fn execute_query(
     sql: String,
     query_id: String,
 ) -> AppResult<QueryResult> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     let driver = state.get(uuid)?;
     // Classify the SQL to detect DDL statements.
     let effects = classify(&sql);
@@ -255,37 +276,43 @@ pub fn cancel_query(state: State<'_, AppState>, query_id: String) {
 
 #[tauri::command]
 pub async fn begin_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.begin().await
 }
 
 #[tauri::command]
 pub async fn commit_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.commit().await
 }
 
 #[tauri::command]
 pub async fn rollback_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.rollback().await
 }
 
 #[tauri::command]
 pub async fn list_processes(state: State<'_, AppState>, id: String) -> AppResult<Vec<ProcessInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_processes().await
 }
 
 #[tauri::command]
 pub async fn kill_process(state: State<'_, AppState>, id: String, pid: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.kill_process(&pid).await
 }
 
 #[tauri::command]
 pub async fn list_roles(state: State<'_, AppState>, id: String) -> AppResult<Vec<RoleInfo>> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.list_roles().await
 }
 
@@ -298,7 +325,8 @@ pub async fn set_column_comment(
     column: String,
     comment: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .set_column_comment(&schema, &table, &column, &comment)
@@ -307,13 +335,15 @@ pub async fn set_column_comment(
 
 #[tauri::command]
 pub async fn create_schema(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.create_schema(&name).await
 }
 
 #[tauri::command]
 pub async fn drop_schema(state: State<'_, AppState>, id: String, name: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.drop_schema(&name).await
 }
 
@@ -327,8 +357,12 @@ pub async fn create_table(
     name: String,
     columns: Vec<ColumnDef>,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
-    state.get(uuid)?.create_table(&schema, &name, &columns).await
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    state
+        .get(uuid)?
+        .create_table(&schema, &name, &columns)
+        .await
 }
 
 #[tauri::command]
@@ -338,7 +372,8 @@ pub async fn drop_table(
     schema: String,
     table: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.drop_table(&schema, &table).await
 }
 
@@ -350,7 +385,8 @@ pub async fn rename_table(
     old: String,
     new: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.rename_table(&schema, &old, &new).await
 }
 
@@ -361,7 +397,8 @@ pub async fn truncate_table(
     schema: String,
     table: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.truncate_table(&schema, &table).await
 }
 
@@ -373,7 +410,8 @@ pub async fn duplicate_table(
     src: String,
     dst: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.duplicate_table(&schema, &src, &dst).await
 }
 
@@ -385,7 +423,8 @@ pub async fn add_column(
     table: String,
     column: ColumnDef,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.add_column(&schema, &table, &column).await
 }
 
@@ -397,7 +436,8 @@ pub async fn drop_column(
     table: String,
     column: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.get(uuid)?.drop_column(&schema, &table, &column).await
 }
 
@@ -410,7 +450,8 @@ pub async fn rename_column(
     old: String,
     new: String,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .rename_column(&schema, &table, &old, &new)
@@ -427,7 +468,8 @@ pub async fn change_column_type(
     new_type: String,
     not_null: bool,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .change_column_type(&schema, &table, &column, &new_type, not_null)
@@ -444,7 +486,8 @@ pub async fn set_column_nullable(
     current_type: String,
     not_null: bool,
 ) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state
         .get(uuid)?
         .set_column_nullable(&schema, &table, &column, &current_type, not_null)
@@ -453,7 +496,8 @@ pub async fn set_column_nullable(
 
 #[tauri::command]
 pub fn refresh_schema(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let uuid = Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
     state.schema_cache.invalidate(uuid);
     Ok(())
 }
