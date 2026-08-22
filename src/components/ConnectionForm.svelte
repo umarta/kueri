@@ -23,8 +23,77 @@
   let error: string | null = null;
   let testOk = false;
 
-  // Local form state: password plaintext (never stored on config).
+  // Local form state: password plaintext (used when kind === "plain" or "keychain").
   let plaintext = "";
+
+  // Ensure config.password has a valid shape on mount (older persisted configs may omit it).
+  if (!config.password || !config.password.kind) {
+    config.password = { kind: "keychain" };
+  }
+
+  function onPasswordKindChange(e: Event) {
+    const kind = (e.currentTarget as HTMLSelectElement).value;
+    if (kind !== "plain" && kind !== "keychain") {
+      plaintext = "";
+    }
+    switch (kind) {
+      case "plain":
+        config.password = { kind: "plain" };
+        break;
+      case "keychain":
+        config.password = { kind: "keychain" };
+        break;
+      case "env":
+        config.password = { kind: "env", name: (config.password as { kind: "env"; name: string }).name ?? "" };
+        break;
+      case "onepassword":
+        config.password = {
+          kind: "onepassword",
+          item: (config.password as { kind: "onepassword"; item: string; field: string }).item ?? "",
+          field: (config.password as { kind: "onepassword"; item: string; field: string }).field ?? "password",
+        };
+        break;
+      case "vault":
+        config.password = {
+          kind: "vault",
+          path: (config.password as { kind: "vault"; path: string; field: string }).path ?? "",
+          field: (config.password as { kind: "vault"; path: string; field: string }).field ?? "password",
+        };
+        break;
+      case "aws-sm":
+        config.password = {
+          kind: "aws-sm",
+          arn: (config.password as { kind: "aws-sm"; arn: string; region: string }).arn ?? "",
+          region: (config.password as { kind: "aws-sm"; arn: string; region: string }).region ?? "us-east-1",
+        };
+        break;
+    }
+    config = config; // trigger Svelte reactivity
+  }
+
+  function validatePassword(): string | null {
+    const p = config.password;
+    if (p.kind === "onepassword") {
+      if (!p.item?.trim()) return "1Password: Item is required.";
+      if (!p.field?.trim()) return "1Password: Field is required.";
+    }
+    if (p.kind === "vault") {
+      if (!p.path?.trim()) return "Vault: Path is required.";
+      if (!p.field?.trim()) return "Vault: Field is required.";
+    }
+    if (p.kind === "aws-sm") {
+      if (!p.arn?.trim()) return "AWS: Secret ARN is required.";
+      if (!p.region?.trim()) return "AWS: Region is required.";
+    }
+    return null;
+  }
+
+  // Narrowed reactive references for password sub-configs — needed because
+  // Svelte's `bind:value` inside `{#if}` blocks can't narrow discriminated unions.
+  $: envPw = config.password.kind === "env" ? config.password : null;
+  $: opPw = config.password.kind === "onepassword" ? config.password : null;
+  $: vaultPw = config.password.kind === "vault" ? config.password : null;
+  $: awsPw = config.password.kind === "aws-sm" ? config.password : null;
 
   // SSL / TLS local state — derived from config.tls on mount.
   let enableSsl = config.tls != null && config.tls.mode !== "disable";
@@ -114,7 +183,7 @@
   function buildConfig(): ConnectionConfig {
     return {
       ...config,
-      password: { kind: "keychain" },
+      password: config.password,
       tls: enableSsl
         ? {
             mode: sslModeChoice,
@@ -153,8 +222,13 @@
   }
 
   async function save() {
+    const pwErr = validatePassword();
+    if (pwErr) {
+      error = pwErr;
+      return;
+    }
     const cfg = buildConfig();
-    await upsertConnection(cfg, plaintext || undefined);
+    await upsertConnection(cfg, config.password.kind === "keychain" ? plaintext || undefined : undefined);
     dispatch("close");
   }
 
@@ -164,7 +238,7 @@
     try {
       const cfg = buildConfig();
       const id = await api.connect(cfg);
-      await upsertConnection(cfg, plaintext || undefined);
+      await upsertConnection(cfg, config.password.kind === "keychain" ? plaintext || undefined : undefined);
       dispatch("connected", id);
     } catch (e) {
       error = String(e);
@@ -267,11 +341,75 @@
         <input class="field" bind:value={config.user} placeholder="user" />
       </label>
 
-      <label class="row">
+      <div class="row">
         <span class="lbl">Password</span>
-        <input class="field" type="password" bind:value={plaintext} placeholder="•••••••" />
-      </label>
-      <p class="hint">Stored securely in your OS keychain — never written to disk.</p>
+        <select class="field" value={config.password.kind} on:change={onPasswordKindChange}>
+          <option value="plain">Plaintext</option>
+          <option value="keychain">OS Keychain</option>
+          <option value="env">Environment variable</option>
+          <option value="onepassword">1Password</option>
+          <option value="vault">Vault</option>
+          <option value="aws-sm">AWS Secrets Manager</option>
+        </select>
+      </div>
+
+      {#if config.password.kind === "plain"}
+        <div class="field-row">
+          <label for="pw-plain">Password</label>
+          <input id="pw-plain" class="field" type="password" bind:value={plaintext} placeholder="•••••••" />
+        </div>
+      {/if}
+
+      {#if config.password.kind === "keychain"}
+        <div class="field-row">
+          <label for="pw-keychain">Password</label>
+          <input id="pw-keychain" class="field" type="password" bind:value={plaintext} placeholder="•••••••" />
+        </div>
+        <p class="hint">Stored securely in your OS keychain — never written to disk.</p>
+      {/if}
+
+      {#if config.password.kind === "env" && envPw}
+        <div class="field-row">
+          <label for="env-name">Variable name</label>
+          <input id="env-name" class="field" type="text" bind:value={envPw.name} placeholder="PGPASSWORD" required />
+        </div>
+      {/if}
+
+      {#if config.password.kind === "onepassword" && opPw}
+        <div class="field-row">
+          <label for="op-item">Item</label>
+          <input id="op-item" class="field" type="text" bind:value={opPw.item} placeholder="Postgres Prod (name or UUID)" required />
+        </div>
+        <div class="field-row">
+          <label for="op-field">Field</label>
+          <input id="op-field" class="field" type="text" bind:value={opPw.field} placeholder="password" required />
+        </div>
+        <p class="hint">Requires the <code>op</code> CLI installed and signed in.</p>
+      {/if}
+
+      {#if config.password.kind === "vault" && vaultPw}
+        <div class="field-row">
+          <label for="vault-path">Path</label>
+          <input id="vault-path" class="field" type="text" bind:value={vaultPw.path} placeholder="secret/data/prod/pg" required />
+        </div>
+        <div class="field-row">
+          <label for="vault-field">Field</label>
+          <input id="vault-field" class="field" type="text" bind:value={vaultPw.field} placeholder="password" required />
+        </div>
+        <p class="hint">Requires the <code>vault</code> CLI with <code>VAULT_ADDR</code> and <code>VAULT_TOKEN</code> set.</p>
+      {/if}
+
+      {#if config.password.kind === "aws-sm" && awsPw}
+        <div class="field-row">
+          <label for="aws-arn">Secret ARN</label>
+          <input id="aws-arn" class="field" type="text" bind:value={awsPw.arn} placeholder="arn:aws:secretsmanager:us-east-1:…:secret:name" required />
+        </div>
+        <div class="field-row">
+          <label for="aws-region">Region</label>
+          <input id="aws-region" class="field" type="text" bind:value={awsPw.region} placeholder="us-east-1" required />
+        </div>
+        <p class="hint">Requires the <code>aws</code> CLI with credentials on PATH.</p>
+      {/if}
 
       <label class="row">
         <span class="lbl">Database</span>
@@ -422,6 +560,9 @@
   .check input { margin: 0; justify-self: start; width: 15px; height: 15px; accent-color: var(--accent); }
 
   .hint { margin: -2px 0 0; padding-left: calc(92px + var(--s-5)); font-size: 11px; color: var(--faint); }
+
+  .field-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: var(--s-5); }
+  .field-row label { font-size: 12px; color: var(--muted); text-align: right; }
 
   .ssh-section { display: flex; flex-direction: column; gap: var(--s-4); }
   .ssh-mode { display: flex; align-items: center; gap: var(--s-4); }

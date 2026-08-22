@@ -29,7 +29,7 @@ pub async fn connect(cfg: &ConnectionConfigV2) -> AppResult<Box<dyn Driver>> {
     if !cfg.database.is_empty() {
         config.database(&cfg.database);
     }
-    let secret = crate::secrets::resolve(&cfg.password, cfg.id)?;
+    let secret = crate::secrets::resolve(&cfg.password, cfg.id).await?;
     config.authentication(AuthMethod::sql_server(&cfg.user, secret.expose_secret()));
     let enc = if let Some(tls) = &cfg.tls {
         match tls.mode {

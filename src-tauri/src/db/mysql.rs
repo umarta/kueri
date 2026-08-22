@@ -23,7 +23,7 @@ pub struct MySqlDriver {
 
 impl MySqlDriver {
     pub async fn connect(cfg: &ConnectionConfigV2) -> AppResult<Self> {
-        let secret = crate::secrets::resolve(&cfg.password, cfg.id)?;
+        let secret = crate::secrets::resolve(&cfg.password, cfg.id).await?;
         let url = cfg.mysql_url(&secret);
         let pool = MySqlPoolOptions::new()
             .max_connections(5)

@@ -58,7 +58,8 @@ async fn pg_dump(
     tools: &str,
 ) -> AppResult<String> {
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)
+        .await?
         .expose_secret()
         .to_string();
     let mut cmd = Command::new(bin(tools, "pg_dump"));
@@ -93,7 +94,8 @@ async fn mysqldump(
     tools: &str,
 ) -> AppResult<String> {
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)
+        .await?
         .expose_secret()
         .to_string();
     let mut cmd = Command::new(bin(tools, "mysqldump"));
@@ -139,7 +141,8 @@ async fn mysql_restore(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> App
     use secrecy::ExposeSecret;
     let file =
         std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)
+        .await?
         .expose_secret()
         .to_string();
     let mut cmd = Command::new(bin(tools, "mysql"));
@@ -196,7 +199,8 @@ async fn pg_restore_or_psql(
         (c, "psql")
     };
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)
+        .await?
         .expose_secret()
         .to_string();
     cmd.env("PGPASSWORD", &password);
