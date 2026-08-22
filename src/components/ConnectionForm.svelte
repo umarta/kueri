@@ -16,7 +16,7 @@
   $: isSqlite = config.kind === "sqlite";
   $: isMysql = config.kind === "mysql";
   $: sslModes = isMysql
-    ? ["PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY", "DISABLED"]
+    ? ["prefer", "require", "verify-ca", "verify-full", "disable"]
     : ["prefer", "require", "verify-ca", "verify-full", "allow", "disable"];
 
   let busy = false;
