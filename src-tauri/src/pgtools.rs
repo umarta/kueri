@@ -58,10 +58,9 @@ async fn pg_dump(
     tools: &str,
 ) -> AppResult<String> {
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)
-        .ok()
-        .map(|s| s.expose_secret().to_string())
-        .unwrap_or_default();
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "pg_dump"));
     cmd.env("PGPASSWORD", &password)
         .arg("-h")
@@ -94,10 +93,9 @@ async fn mysqldump(
     tools: &str,
 ) -> AppResult<String> {
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)
-        .ok()
-        .map(|s| s.expose_secret().to_string())
-        .unwrap_or_default();
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "mysqldump"));
     cmd.env("MYSQL_PWD", &password)
         .arg("-h")
@@ -141,10 +139,9 @@ async fn mysql_restore(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> App
     use secrecy::ExposeSecret;
     let file =
         std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)
-        .ok()
-        .map(|s| s.expose_secret().to_string())
-        .unwrap_or_default();
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "mysql"));
     cmd.env("MYSQL_PWD", &password)
         .arg("-h")
@@ -195,10 +192,9 @@ async fn pg_restore_or_psql(cfg: &ConnectionConfigV2, path: &str, tools: &str) -
         (c, "psql")
     };
     use secrecy::ExposeSecret;
-    let password = crate::secrets::resolve(&cfg.password, cfg.id)
-        .ok()
-        .map(|s| s.expose_secret().to_string())
-        .unwrap_or_default();
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     cmd.env("PGPASSWORD", &password);
     run(cmd, tool).await
 }
