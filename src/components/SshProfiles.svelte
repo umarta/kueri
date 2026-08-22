@@ -17,7 +17,6 @@
         user: string;
         auth: "key-file" | "agent";
         keyPath: string;
-        passphraseMode: "none" | "keychain";
     };
     let form: FormState | null = null;
     let formIsNew = false;
@@ -49,7 +48,6 @@
             user: "",
             auth: "agent",
             keyPath: "",
-            passphraseMode: "none",
         };
         formIsNew = true;
         formError = null;
@@ -65,8 +63,6 @@
             user: p.user,
             auth: keyFileAuth ? "key-file" : "agent",
             keyPath: keyFileAuth ? keyFileAuth.path : "",
-            passphraseMode:
-                keyFileAuth && keyFileAuth.passphrase?.kind === "keychain" ? "keychain" : "none",
         };
         formIsNew = false;
         formError = null;
@@ -84,9 +80,7 @@
 
     function assembleAuth(f: FormState): SshAuth {
         if (f.auth === "agent") return { kind: "agent" };
-        const passphrase =
-            f.passphraseMode === "keychain" ? ({ kind: "keychain" } as const) : null;
-        return { kind: "key-file", path: f.keyPath, passphrase };
+        return { kind: "key-file", path: f.keyPath, passphrase: null };
     }
 
     async function saveForm() {
@@ -204,11 +198,7 @@
             <input class="field" bind:value={form.keyPath} placeholder="/Users/me/.ssh/id_rsa" />
             <button class="btn btn-browse" on:click={browseKey}>Browse…</button>
         </label>
-        <fieldset>
-            <legend>Passphrase</legend>
-            <label class="radio-row"><input type="radio" bind:group={form.passphraseMode} value="none" /> None</label>
-            <label class="radio-row"><input type="radio" bind:group={form.passphraseMode} value="keychain" /> From OS keychain</label>
-        </fieldset>
+        <p class="hint">Passphrase-protected keys are not yet supported — use ssh-agent with the key pre-loaded.</p>
     {/if}
 
     {#if formError}
@@ -365,6 +355,8 @@
         font-size: 12.5px;
     }
     .radio-row input[type="radio"] { accent-color: var(--accent); }
+
+    .hint { margin: 4px 0 8px; font-size: 11.5px; color: var(--muted); }
 
     .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
