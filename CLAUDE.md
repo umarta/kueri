@@ -2,6 +2,18 @@
 
 Guidance for working on this repo with Claude Code. Read this first.
 
+## Local-only working process (maintainer setup)
+
+If this checkout has `docs/blueprints/` and `docs/INDEX.md` present locally (they are gitignored and never committed), the maintainer workflow is active:
+
+- **Ticket board:** `docs/INDEX.md` — one `next` slot at a time; ticket prefix `KUE-nnn`.
+- **Cross-cutting design:** `docs/blueprints/00-…` through `09-…`.
+- **Development cycle:** `docs/blueprints/08-development-cycle/README.md`.
+- **Skill flow:** `superpowers:brainstorming` → spec → `superpowers:writing-plans` → plan → TDD execute → `superpowers:requesting-code-review` → `superpowers:verification-before-completion` → `superpowers:finishing-a-development-branch`.
+- **Public GH issues remain the user-facing tracker.** KUE tickets map many-to-many to GH issues.
+
+If this is a fresh clone from the public repo, none of the above is present — work through GH issues directly.
+
 ## What this is
 Kueri is a lightweight, native multi-database GUI client. Goal: TablePlus-grade
 *simplicity and speed*, open source. The complexity of supporting many databases

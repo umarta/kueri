@@ -7,7 +7,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::{Column, Executor, Postgres, Row, TypeInfo, ValueRef};
 use tokio::sync::Mutex;
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
     ColumnInfo, Driver, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo,
@@ -23,11 +23,14 @@ pub struct PgDriver {
 }
 
 impl PgDriver {
-    pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Self> {
+    pub async fn connect(cfg: &ConnectionConfigV2) -> AppResult<Self> {
+        let secret = crate::secrets::resolve(&cfg.password, cfg.id)?;
+        let url = cfg.pg_url(&secret);
         let pool = PgPoolOptions::new()
             .max_connections(5)
-            .connect(&cfg.pg_url())
-            .await?;
+            .connect(&url)
+            .await
+            .map_err(|e| AppError::Other(e.to_string()))?;
         sqlx::query("SELECT 1").execute(&pool).await?;
         Ok(Self {
             pool,

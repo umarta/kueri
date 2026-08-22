@@ -3,7 +3,7 @@
   import DbPicker from "./DbPicker.svelte";
   import ConnectionForm from "./ConnectionForm.svelte";
   import { api } from "../lib/tauri";
-  import { savedConnections, removeConnection, resolvePassword } from "../lib/stores/connection";
+  import { savedConnections, removeConnection } from "../lib/stores/connection";
   import { openContextMenu } from "../lib/stores/contextMenu";
   import { dbKind, statusVar } from "../lib/dbKinds";
   import type { ConnectionConfig, DbKind } from "../lib/types";
@@ -69,14 +69,18 @@
     picking = false;
     editing = {
       id: crypto.randomUUID(),
+      schema_version: 2,
       name: meta.label,
       kind: e.detail,
       host: "localhost",
       port: meta.port,
       database: "",
       user: "",
-      password: "",
-      ssl: false,
+      password: { kind: "keychain" },
+      tls: null,
+      ssh: null,
+      safety: "off",
+      tags: [],
       file_path: null,
       color: "local",
       tag: "local",
@@ -108,10 +112,9 @@
     connectingId = c.id;
     error = null;
     try {
-      // Pull the password from the keychain (saved connections don't keep it in memory).
-      const cfg = { ...c, password: await resolvePassword(c) };
-      const id = await api.connect(cfg);
-      dispatch("connected", { id, config: cfg });
+      // The Rust backend resolves the password from the keychain via PasswordSource.
+      const id = await api.connect(c);
+      dispatch("connected", { id, config: c });
     } catch (e) {
       error = String(e);
     } finally {
@@ -208,12 +211,12 @@
             {@const c = row.c}
           <li class="conn">
             <button class="conn" on:click={() => open(c)} on:contextmenu={(e) => connMenu(e, c)} disabled={!!connectingId}>
-              <span class="dot" style="--c: {statusVar(c.color)}" title={c.tag ?? ""}></span>
+              <span class="dot" style="--c: {statusVar(c.color ?? undefined)}" title={c.tag ?? ""}></span>
               <span class="cn-badge" style="--c: {dbKind(c.kind).color}">{dbKind(c.kind).abbr}</span>
               <span class="cn-text">
                 <span class="cn-name">
                   {c.name}
-                  {#if c.tag}<span class="cn-tag" style="--c: {statusVar(c.color)}">{c.tag}</span>{/if}
+                  {#if c.tag}<span class="cn-tag" style="--c: {statusVar(c.color ?? undefined)}">{c.tag}</span>{/if}
                 </span>
                 <span class="cn-sub">{subtitle(c)}</span>
               </span>

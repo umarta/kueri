@@ -6,7 +6,8 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
+use crate::tls::TlsMode;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{ColumnInfo, Driver, QueryResult, SchemaInfo, TableInfo};
 use crate::error::{AppError, AppResult};
@@ -20,19 +21,25 @@ pub struct SqlServerDriver {
 }
 
 /// Open a SQL Server connection (sqlx dropped MSSQL — this uses `tiberius`).
-pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Box<dyn Driver>> {
+pub async fn connect(cfg: &ConnectionConfigV2) -> AppResult<Box<dyn Driver>> {
+    use secrecy::ExposeSecret;
     let mut config = Config::new();
     config.host(&cfg.host);
     config.port(if cfg.port == 0 { 1433 } else { cfg.port });
     if !cfg.database.is_empty() {
         config.database(&cfg.database);
     }
-    config.authentication(AuthMethod::sql_server(&cfg.user, &cfg.password));
-    config.encryption(if cfg.ssl {
-        EncryptionLevel::Required
+    let secret = crate::secrets::resolve(&cfg.password, cfg.id)?;
+    config.authentication(AuthMethod::sql_server(&cfg.user, secret.expose_secret()));
+    let enc = if let Some(tls) = &cfg.tls {
+        match tls.mode {
+            TlsMode::Disable => EncryptionLevel::NotSupported,
+            _ => EncryptionLevel::Required,
+        }
     } else {
         EncryptionLevel::NotSupported
-    });
+    };
+    config.encryption(enc);
     // Desktop client: accept self-signed certs. TODO: expose a "verify cert" toggle.
     config.trust_cert();
 

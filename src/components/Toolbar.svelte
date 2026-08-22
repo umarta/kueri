@@ -45,7 +45,7 @@
   <div class="center">
     {#if conn && meta}
       <div class="ident">
-        <span class="dot" style="--c: {statusVar(conn.color)}"></span>
+        <span class="dot" style="--c: {statusVar(conn.color ?? undefined)}"></span>
         <span class="badge" style="--c: {meta.color}">{meta.abbr}</span>
         {#if conn.tag}<span class="env">{conn.tag.toUpperCase()}</span><span class="sep">·</span>{/if}
         <span class="name">{conn.name}</span>

@@ -8,3 +8,18 @@ src-tauri/gen
 # use npm (package-lock.json); bun.lock confuses tauri-action CI
 bun.lock
 bun.lockb
+
+# ─────────────────────────────────────────────────────────────
+# Internal planning docs — NEVER commit.
+# Public-facing docs are docs/logo.png and docs/screenshots/ only.
+# Everything else under docs/ is internal (blueprints, board, specs,
+# plans, verifications, audits). Whitelist the two public paths so
+# adding more internal files is safe by default.
+# ─────────────────────────────────────────────────────────────
+docs/*
+!docs/logo.png
+!docs/screenshots
+!docs/screenshots/**
+
+# controller scratch state (per-plan SDD ledgers, diffs, briefs)
+.superpowers/

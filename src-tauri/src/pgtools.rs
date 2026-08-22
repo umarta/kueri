@@ -6,11 +6,11 @@
 use std::process::Stdio;
 use tokio::process::Command;
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::db::DbKind;
 use crate::error::{AppError, AppResult};
 
-fn sqlite_file(cfg: &ConnectionConfig) -> String {
+fn sqlite_file(cfg: &ConnectionConfigV2) -> String {
     cfg.file_path
         .clone()
         .unwrap_or_else(|| cfg.database.clone())
@@ -30,7 +30,7 @@ fn bin(tools: &str, name: &str) -> String {
 /// `tools`: optional folder for pg_dump/mysqldump (empty = PATH).
 #[tauri::command]
 pub async fn pg_export(
-    cfg: ConnectionConfig,
+    cfg: ConnectionConfigV2,
     path: String,
     format: String,
     contents: String,
@@ -51,14 +51,18 @@ pub async fn pg_export(
 }
 
 async fn pg_dump(
-    cfg: &ConnectionConfig,
+    cfg: &ConnectionConfigV2,
     path: &str,
     format: &str,
     contents: &str,
     tools: &str,
 ) -> AppResult<String> {
+    use secrecy::ExposeSecret;
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "pg_dump"));
-    cmd.env("PGPASSWORD", &cfg.password)
+    cmd.env("PGPASSWORD", &password)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-p")
@@ -83,13 +87,17 @@ async fn pg_dump(
 }
 
 async fn mysqldump(
-    cfg: &ConnectionConfig,
+    cfg: &ConnectionConfigV2,
     path: &str,
     contents: &str,
     tools: &str,
 ) -> AppResult<String> {
+    use secrecy::ExposeSecret;
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "mysqldump"));
-    cmd.env("MYSQL_PWD", &cfg.password)
+    cmd.env("MYSQL_PWD", &password)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-P")
@@ -112,7 +120,7 @@ async fn mysqldump(
 }
 
 #[tauri::command]
-pub async fn pg_import(cfg: ConnectionConfig, path: String, tools: String) -> AppResult<String> {
+pub async fn pg_import(cfg: ConnectionConfigV2, path: String, tools: String) -> AppResult<String> {
     match cfg.kind {
         DbKind::Postgres => pg_restore_or_psql(&cfg, &path, &tools).await,
         DbKind::Mysql => mysql_restore(&cfg, &path, &tools).await,
@@ -127,11 +135,15 @@ pub async fn pg_import(cfg: ConnectionConfig, path: String, tools: String) -> Ap
     }
 }
 
-async fn mysql_restore(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppResult<String> {
+async fn mysql_restore(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> AppResult<String> {
+    use secrecy::ExposeSecret;
     let file =
         std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
     let mut cmd = Command::new(bin(tools, "mysql"));
-    cmd.env("MYSQL_PWD", &cfg.password)
+    cmd.env("MYSQL_PWD", &password)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-P")
@@ -143,7 +155,7 @@ async fn mysql_restore(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppRe
     run(cmd, "mysql").await
 }
 
-async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppResult<String> {
+async fn pg_restore_or_psql(cfg: &ConnectionConfigV2, path: &str, tools: &str) -> AppResult<String> {
     let lower = path.to_lowercase();
     let custom =
         lower.ends_with(".dump") || lower.ends_with(".backup") || lower.ends_with(".pgdump");
@@ -179,7 +191,11 @@ async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str, tools: &str) -> 
             .arg(path);
         (c, "psql")
     };
-    cmd.env("PGPASSWORD", &cfg.password);
+    use secrecy::ExposeSecret;
+    let password = crate::secrets::resolve(&cfg.password, cfg.id)?
+        .expose_secret()
+        .to_string();
+    cmd.env("PGPASSWORD", &password);
     run(cmd, tool).await
 }
 

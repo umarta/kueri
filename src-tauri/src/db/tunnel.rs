@@ -11,8 +11,9 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::error::{AppError, AppResult};
+use crate::ssh::profile::{SshAuth, SshRef};
 
 fn free_port() -> AppResult<u16> {
     let l = TcpListener::bind("127.0.0.1:0")
@@ -24,16 +25,30 @@ fn free_port() -> AppResult<u16> {
 
 /// Open a tunnel and return `(local_port, ssh_child)`. The child is configured
 /// to be killed when dropped, so disconnecting (dropping it) tears the tunnel down.
-pub async fn open(cfg: &ConnectionConfig) -> AppResult<(u16, Child)> {
-    let lp = free_port()?;
-    let ssh_port = if cfg.ssh_port == 0 { 22 } else { cfg.ssh_port };
-    let db_host = if cfg.host.is_empty() {
-        "127.0.0.1"
-    } else {
-        cfg.host.as_str()
+pub async fn open(cfg: &ConnectionConfigV2) -> AppResult<(u16, Child)> {
+    let ssh_ref = match &cfg.ssh {
+        Some(r) => r,
+        None => {
+            return Err(AppError::Other(
+                "open() called without an SSH config — this is a bug.".into(),
+            ))
+        }
     };
-    let target = format!("{}@{}", cfg.ssh_user, cfg.ssh_host);
+
+    let profile = match ssh_ref {
+        SshRef::Inline(p) => p,
+        SshRef::Profile(_) => {
+            return Err(AppError::Other(
+                "SSH profile references not yet supported (Phase 4).".into(),
+            ))
+        }
+    };
+
+    let lp = free_port()?;
+    let ssh_port = profile.port;
+    let db_host = &cfg.host;
     let fwd = format!("127.0.0.1:{lp}:{db_host}:{}", cfg.port);
+    let target = format!("{}@{}", profile.user, profile.host);
 
     let mut cmd = Command::new("ssh");
     cmd.arg("-N")
@@ -46,14 +61,21 @@ pub async fn open(cfg: &ConnectionConfig) -> AppResult<(u16, Child)> {
         .arg(ssh_port.to_string())
         .arg("-L")
         .arg(&fwd);
-    if let Some(key) = cfg
-        .ssh_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        cmd.arg("-i").arg(key);
+
+    match &profile.auth {
+        SshAuth::Password { .. } => {
+            return Err(AppError::Other(
+                "SSH password auth is not supported in Phase 1. Use a key file or ssh-agent.".into(),
+            ));
+        }
+        SshAuth::KeyFile { path, .. } => {
+            cmd.arg("-i").arg(path);
+        }
+        SshAuth::Agent => {
+            // Relies on ssh-agent; no extra args needed.
+        }
     }
+
     cmd.arg(&target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

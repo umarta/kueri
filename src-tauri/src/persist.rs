@@ -8,9 +8,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use keyring::Entry;
-use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+use crate::db::connect::ConnectionConfigV2;
 use crate::error::{AppError, AppResult};
 
 const KEYRING_SERVICE: &str = "dev.kueri.app";
@@ -25,21 +25,17 @@ fn connections_path(app: &AppHandle) -> AppResult<PathBuf> {
 }
 
 #[tauri::command]
-pub fn load_connections(app: AppHandle) -> AppResult<Vec<Value>> {
+pub fn load_connections(app: AppHandle) -> AppResult<Vec<ConnectionConfigV2>> {
     let path = connections_path(&app)?;
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let raw = fs::read_to_string(&path).map_err(|e| AppError::Other(e.to_string()))?;
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
+    crate::migration::migrate_if_needed(&path)
 }
 
 #[tauri::command]
-pub fn save_connections(app: AppHandle, connections: Vec<Value>) -> AppResult<()> {
+pub fn save_connections(app: AppHandle, connections: Vec<ConnectionConfigV2>) -> AppResult<()> {
     let path = connections_path(&app)?;
-    let raw =
-        serde_json::to_string_pretty(&connections).map_err(|e| AppError::Other(e.to_string()))?;
-    fs::write(&path, raw).map_err(|e| AppError::Other(e.to_string()))
+    let raw = serde_json::to_string_pretty(&connections)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    std::fs::write(&path, raw).map_err(|e| AppError::Other(e.to_string()))
 }
 
 fn entry(id: &str) -> AppResult<Entry> {

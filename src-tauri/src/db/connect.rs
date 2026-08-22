@@ -1,124 +1,116 @@
 use serde::{Deserialize, Serialize};
+use secrecy::ExposeSecret;
+use uuid::Uuid;
 
+use crate::safety::SafetyLevel;
+use crate::secrets::PasswordSource;
+use crate::ssh::profile::SshRef;
+use crate::tls::{TlsConfig, TlsMode};
 use super::DbKind;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ConnectionConfig {
-    pub id: String,
+pub const SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ConnectionConfigV2 {
+    pub id: Uuid,
+    pub schema_version: u32,
     pub name: String,
     pub kind: DbKind,
-    #[serde(default)]
     pub host: String,
-    #[serde(default)]
     pub port: u16,
-    #[serde(default)]
     pub database: String,
-    #[serde(default)]
     pub user: String,
+    pub password: PasswordSource,
     #[serde(default)]
-    pub password: String,
+    pub tls: Option<TlsConfig>,
     #[serde(default)]
-    pub ssl: bool,
-    /// TLS mode override (Postgres: disable/allow/prefer/require/verify-ca/verify-full;
-    /// MySQL: DISABLED/PREFERRED/REQUIRED/VERIFY_CA/VERIFY_IDENTITY). Empty = derive from `ssl`.
+    pub ssh: Option<SshRef>,
     #[serde(default)]
-    pub ssl_mode: Option<String>,
-    /// Optional TLS file paths (CA / client cert / client key).
+    pub safety: SafetyLevel,
     #[serde(default)]
-    pub ssl_ca: Option<String>,
+    pub color: Option<String>,
     #[serde(default)]
-    pub ssl_cert: Option<String>,
-    #[serde(default)]
-    pub ssl_key: Option<String>,
-    /// SQLite only: path to the .db file.
+    pub tags: Vec<String>,
     #[serde(default)]
     pub file_path: Option<String>,
-
-    // ── SSH tunnel (optional) ────────────────────────────────────────────────
-    #[serde(default)]
-    pub ssh_enabled: bool,
-    #[serde(default)]
-    pub ssh_host: String,
-    #[serde(default)]
-    pub ssh_port: u16,
-    #[serde(default)]
-    pub ssh_user: String,
-    /// Path to a private key (key/agent auth only — no password prompts).
-    #[serde(default)]
-    pub ssh_key: Option<String>,
 }
 
-impl ConnectionConfig {
-    pub fn pg_url(&self) -> String {
-        let sslmode = nonempty(&self.ssl_mode)
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                if self.ssl {
-                    "require".into()
-                } else {
-                    "prefer".into()
-                }
-            });
+impl ConnectionConfigV2 {
+    pub fn pg_url(&self, secret: &secrecy::SecretString) -> String {
+        let sslmode = self.tls
+            .as_ref()
+            .map(|t| pg_mode_str(&t.mode))
+            .unwrap_or("prefer");
         let mut url = format!(
             "postgres://{}:{}@{}:{}/{}?sslmode={}",
             enc(&self.user),
-            enc(&self.password),
+            enc(secret.expose_secret()),
             self.host,
             self.port,
             self.database,
             sslmode
         );
-        if let Some(ca) = nonempty(&self.ssl_ca) {
-            url.push_str(&format!("&sslrootcert={}", enc(ca)));
-        }
-        if let Some(cert) = nonempty(&self.ssl_cert) {
-            url.push_str(&format!("&sslcert={}", enc(cert)));
-        }
-        if let Some(key) = nonempty(&self.ssl_key) {
-            url.push_str(&format!("&sslkey={}", enc(key)));
+        if let Some(tls) = &self.tls {
+            if let Some(ca) = &tls.ca_path {
+                url.push_str(&format!("&sslrootcert={}", enc(&ca.to_string_lossy())));
+            }
+            if let Some(cert) = &tls.cert_path {
+                url.push_str(&format!("&sslcert={}", enc(&cert.to_string_lossy())));
+            }
+            if let Some(key) = &tls.key_path {
+                url.push_str(&format!("&sslkey={}", enc(&key.to_string_lossy())));
+            }
         }
         url
     }
 
-    pub fn mysql_url(&self) -> String {
-        let mode = nonempty(&self.ssl_mode)
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                if self.ssl {
-                    "REQUIRED".into()
-                } else {
-                    "PREFERRED".into()
-                }
-            });
+    pub fn mysql_url(&self, secret: &secrecy::SecretString) -> String {
+        let mode = self.tls
+            .as_ref()
+            .map(|t| mysql_mode_str(&t.mode))
+            .unwrap_or("PREFERRED");
         let mut url = format!(
             "mysql://{}:{}@{}:{}/{}?ssl-mode={}",
             enc(&self.user),
-            enc(&self.password),
+            enc(secret.expose_secret()),
             self.host,
             self.port,
             self.database,
             mode
         );
-        // sqlx MySQL takes the CA via the URL; client cert/key aren't URL-configurable.
-        if let Some(ca) = nonempty(&self.ssl_ca) {
-            url.push_str(&format!("&ssl-ca={}", enc(ca)));
+        if let Some(tls) = &self.tls {
+            if let Some(ca) = &tls.ca_path {
+                url.push_str(&format!("&ssl-ca={}", enc(&ca.to_string_lossy())));
+            }
         }
         url
     }
 
     pub fn sqlite_url(&self) -> String {
-        let path = self
-            .file_path
-            .clone()
-            .unwrap_or_else(|| self.database.clone());
+        let path = self.file_path.clone().unwrap_or_else(|| self.database.clone());
         format!("sqlite://{}", path)
     }
 }
 
-/// Minimal percent-encoding for URL credentials (encodes each non-safe byte).
-/// Trimmed string slice if the option holds non-blank text, else None.
-fn nonempty(o: &Option<String>) -> Option<&str> {
-    o.as_deref().map(str::trim).filter(|s| !s.is_empty())
+fn pg_mode_str(m: &TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disable => "disable",
+        TlsMode::Allow => "allow",
+        TlsMode::Prefer => "prefer",
+        TlsMode::Require => "require",
+        TlsMode::VerifyCa => "verify-ca",
+        TlsMode::VerifyFull => "verify-full",
+    }
+}
+
+fn mysql_mode_str(m: &TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disable => "DISABLED",
+        TlsMode::Allow | TlsMode::Prefer => "PREFERRED",
+        TlsMode::Require => "REQUIRED",
+        TlsMode::VerifyCa => "VERIFY_CA",
+        TlsMode::VerifyFull => "VERIFY_IDENTITY",
+    }
 }
 
 fn enc(s: &str) -> String {

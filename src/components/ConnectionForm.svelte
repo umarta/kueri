@@ -3,9 +3,9 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import Modal from "./Modal.svelte";
   import { api } from "../lib/tauri";
-  import { upsertConnection } from "../lib/stores/connection";
+  import { upsertConnection, resolvePassword } from "../lib/stores/connection";
   import { dbKind, STATUS_COLORS } from "../lib/dbKinds";
-  import type { ConnectionConfig, StatusColor } from "../lib/types";
+  import type { ConnectionConfig, StatusColor, TlsMode } from "../lib/types";
 
   // Initial config — kind is preset by the picker; full config when editing.
   export let config: ConnectionConfig;
@@ -16,12 +16,63 @@
   $: isSqlite = config.kind === "sqlite";
   $: isMysql = config.kind === "mysql";
   $: sslModes = isMysql
-    ? ["PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY", "DISABLED"]
+    ? ["prefer", "require", "verify-ca", "verify-full", "disable"]
     : ["prefer", "require", "verify-ca", "verify-full", "allow", "disable"];
 
   let busy = false;
   let error: string | null = null;
   let testOk = false;
+
+  // Local form state: password plaintext (never stored on config).
+  let plaintext = "";
+
+  // SSL / TLS local state — derived from config.tls on mount.
+  let enableSsl = config.tls != null && config.tls.mode !== "disable";
+  let sslModeChoice: TlsMode = config.tls?.mode ?? "prefer";
+  let caPath = config.tls?.ca_path ?? "";
+  let certPath = config.tls?.cert_path ?? "";
+  let keyPath = config.tls?.key_path ?? "";
+
+  // SSH local state — derived from config.ssh on mount.
+  let enableSsh = config.ssh != null;
+  let sshHost = (config.ssh?.kind === "inline" ? config.ssh.value.host : "") ?? "";
+  let sshPort = (config.ssh?.kind === "inline" ? config.ssh.value.port : 22) ?? 22;
+  let sshUser = (config.ssh?.kind === "inline" ? config.ssh.value.user : "") ?? "";
+  let sshKey = (config.ssh?.kind === "inline" && config.ssh.value.auth.kind === "key-file" ? config.ssh.value.auth.path : "") ?? "";
+
+  // Load plaintext from keychain when editing an existing connection.
+  resolvePassword(config).then((p) => { if (p) plaintext = p; });
+
+  function buildConfig(): ConnectionConfig {
+    return {
+      ...config,
+      password: { kind: "keychain" },
+      tls: enableSsl
+        ? {
+            mode: sslModeChoice,
+            ca_path: caPath || null,
+            cert_path: certPath || null,
+            key_path: keyPath || null,
+          }
+        : null,
+      ssh: enableSsh
+        ? {
+            kind: "inline",
+            value: {
+              id: (config.ssh?.kind === "inline" ? config.ssh.value.id : null) ?? crypto.randomUUID(),
+              name: "form",
+              host: sshHost,
+              port: sshPort || 22,
+              user: sshUser,
+              auth: sshKey
+                ? { kind: "key-file", path: sshKey }
+                : { kind: "agent" },
+              jump: null,
+            },
+          }
+        : null,
+    };
+  }
 
   function pickColor(c: StatusColor) {
     config.color = c;
@@ -37,7 +88,8 @@
     error = null;
     testOk = false;
     try {
-      const id = await api.connect(config);
+      const cfg = buildConfig();
+      const id = await api.connect(cfg);
       await api.disconnect(id);
       testOk = true;
     } catch (e) {
@@ -48,7 +100,8 @@
   }
 
   async function save() {
-    await upsertConnection(config);
+    const cfg = buildConfig();
+    await upsertConnection(cfg, plaintext || undefined);
     dispatch("close");
   }
 
@@ -56,8 +109,9 @@
     busy = true;
     error = null;
     try {
-      const id = await api.connect(config);
-      await upsertConnection(config);
+      const cfg = buildConfig();
+      const id = await api.connect(cfg);
+      await upsertConnection(cfg, plaintext || undefined);
       dispatch("connected", id);
     } catch (e) {
       error = String(e);
@@ -150,7 +204,7 @@
 
       <label class="row">
         <span class="lbl">Password</span>
-        <input class="field" type="password" bind:value={config.password} placeholder="•••••••" />
+        <input class="field" type="password" bind:value={plaintext} placeholder="•••••••" />
       </label>
       <p class="hint">Stored securely in your OS keychain — never written to disk.</p>
 
@@ -160,54 +214,53 @@
       </label>
 
       <label class="row check">
-        <input type="checkbox" bind:checked={config.ssl} />
+        <input type="checkbox" bind:checked={enableSsl} />
         <span>Use SSL</span>
       </label>
 
-      {#if config.ssl}
+      {#if enableSsl}
         <label class="row">
           <span class="lbl">SSL mode</span>
-          <select class="field" bind:value={config.ssl_mode}>
-            <option value="">(default)</option>
+          <select class="field" bind:value={sslModeChoice}>
             {#each sslModes as m (m)}<option value={m}>{m}</option>{/each}
           </select>
         </label>
         <label class="row">
           <span class="lbl">CA cert</span>
-          <input class="field" bind:value={config.ssl_ca} placeholder="/path/to/ca.pem (optional)" />
+          <input class="field" bind:value={caPath} placeholder="/path/to/ca.pem (optional)" />
         </label>
         {#if !isMysql}
           <label class="row">
             <span class="lbl">Client cert</span>
-            <input class="field" bind:value={config.ssl_cert} placeholder="/path/to/client.crt (optional)" />
+            <input class="field" bind:value={certPath} placeholder="/path/to/client.crt (optional)" />
           </label>
           <label class="row">
             <span class="lbl">Client key</span>
-            <input class="field" bind:value={config.ssl_key} placeholder="/path/to/client.key (optional)" />
+            <input class="field" bind:value={keyPath} placeholder="/path/to/client.key (optional)" />
           </label>
         {/if}
       {/if}
 
       <label class="row check">
-        <input type="checkbox" bind:checked={config.ssh_enabled} />
+        <input type="checkbox" bind:checked={enableSsh} />
         <span>Connect via SSH tunnel</span>
       </label>
-      {#if config.ssh_enabled}
+      {#if enableSsh}
         <label class="row">
           <span class="lbl">SSH host</span>
-          <input class="field" bind:value={config.ssh_host} placeholder="bastion.example.com" />
+          <input class="field" bind:value={sshHost} placeholder="bastion.example.com" />
         </label>
         <label class="row">
           <span class="lbl">SSH port</span>
-          <input class="field port" type="number" bind:value={config.ssh_port} placeholder="22" />
+          <input class="field port" type="number" bind:value={sshPort} placeholder="22" />
         </label>
         <label class="row">
           <span class="lbl">SSH user</span>
-          <input class="field" bind:value={config.ssh_user} placeholder="ubuntu" />
+          <input class="field" bind:value={sshUser} placeholder="ubuntu" />
         </label>
         <label class="row">
           <span class="lbl">Private key</span>
-          <input class="field" bind:value={config.ssh_key} placeholder="~/.ssh/id_ed25519 (or blank for agent)" />
+          <input class="field" bind:value={sshKey} placeholder="~/.ssh/id_ed25519 (or blank for agent)" />
         </label>
         <p class="ssh-note">Key/agent auth only. The DB host/port above are reached through the tunnel.</p>
       {/if}

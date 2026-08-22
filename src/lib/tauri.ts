@@ -94,7 +94,7 @@ export const api = {
 
   // Persistence (connections file) + OS keychain (passwords).
   loadConnections: () => invoke<ConnectionConfig[]>("load_connections"),
-  saveConnections: (connections: Omit<ConnectionConfig, "password">[]) =>
+  saveConnections: (connections: ConnectionConfig[]) =>
     invoke<void>("save_connections", { connections }),
   secretSet: (id: string, password: string) =>
     invoke<void>("secret_set", { id, password }),

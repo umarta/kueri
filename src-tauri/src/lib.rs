@@ -1,10 +1,17 @@
 mod clients;
 mod commands;
-mod db;
+pub mod db;
 mod error;
 mod menu;
 mod persist;
 mod pgtools;
+mod migration;
+pub mod safety;
+pub mod secrets;
+pub mod ssh {
+    pub mod profile;
+}
+pub mod tls;
 
 use db::pool::AppState;
 

@@ -24,7 +24,7 @@
   import { settings } from "./lib/stores/settings";
   import {
     activeConnectionId, activeConnection, schemaCatalog, catalogColumns, workspaces, activeSchema,
-    readOnly, isReadStatement, shouldStartReadOnly, resolvePassword,
+    readOnly, isReadStatement, shouldStartReadOnly,
     inTransaction, setInTransaction,
   } from "./lib/stores/connection";
   import { api } from "./lib/tauri";
@@ -961,9 +961,9 @@
       const cfg = saved.find((c) => c.id === cid);
       if (!cfg) continue;
       try {
-        const full = { ...cfg, password: await resolvePassword(cfg) };
-        const id = await api.connect(full);
-        workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: full }]));
+        // The Rust backend resolves the password from the keychain via PasswordSource.
+        const id = await api.connect(cfg);
+        workspaces.update((w) => (w.some((x) => x.id === id) ? w : [...w, { id, config: cfg }]));
       } catch {
         /* skip connections that no longer reach */
       }
@@ -972,7 +972,7 @@
     if (target) {
       activeConnection.set(target.config);
       activeConnectionId.set(target.id);
-      readOnly.set(shouldStartReadOnly(target.config.color, target.config.tag));
+      readOnly.set(shouldStartReadOnly(target.config.color ?? undefined, target.config.tag));
       freshTabs();
       schemaCatalog.set({});
       reloadSidebar();
@@ -1000,7 +1000,7 @@
     stashCurrent();
     activeConnection.set(config);
     activeConnectionId.set(id);
-    readOnly.set(shouldStartReadOnly(config.color, config.tag));
+    readOnly.set(shouldStartReadOnly(config.color ?? undefined, config.tag));
     freshTabs();
     schemaCatalog.set({});
     addOpen = false;
@@ -1014,7 +1014,7 @@
     stashCurrent();
     activeConnection.set(ws.config);
     activeConnectionId.set(id);
-    readOnly.set(shouldStartReadOnly(ws.config.color, ws.config.tag));
+    readOnly.set(shouldStartReadOnly(ws.config.color ?? undefined, ws.config.tag));
     restore(id);
     schemaCatalog.set({});
     reloadSidebar();
@@ -1031,7 +1031,7 @@
       const next = remaining[0];
       activeConnection.set(next.config);
       activeConnectionId.set(next.id);
-      readOnly.set(shouldStartReadOnly(next.config.color, next.config.tag));
+      readOnly.set(shouldStartReadOnly(next.config.color ?? undefined, next.config.tag));
       restore(next.id);
       schemaCatalog.set({});
       reloadSidebar();
