@@ -11,7 +11,7 @@ pub mod tunnel;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::db::driver::Driver;
 use crate::error::AppResult;
 
@@ -27,7 +27,7 @@ pub enum DbKind {
 }
 
 /// Factory: pick a driver implementation from the connection's kind.
-pub async fn open(cfg: &ConnectionConfig) -> AppResult<Box<dyn Driver>> {
+pub async fn open(cfg: &ConnectionConfigV2) -> AppResult<Box<dyn Driver>> {
     match cfg.kind {
         DbKind::Postgres => Ok(Box::new(postgres::PgDriver::connect(cfg).await?)),
         DbKind::Mysql => Ok(Box::new(mysql::MySqlDriver::connect(cfg).await?)),

@@ -35,10 +35,6 @@ pub struct ConnectionConfigV2 {
     pub file_path: Option<String>,
 }
 
-/// Temporary alias so downstream code still parses while we work through Tasks 4–8.
-/// Removed at the end of Task 8.
-pub type ConnectionConfig = ConnectionConfigV2;
-
 impl ConnectionConfigV2 {
     pub fn pg_url(&self, secret: &secrecy::SecretString) -> String {
         let sslmode = self.tls
@@ -115,12 +111,6 @@ fn mysql_mode_str(m: &TlsMode) -> &'static str {
         TlsMode::VerifyCa => "VERIFY_CA",
         TlsMode::VerifyFull => "VERIFY_IDENTITY",
     }
-}
-
-/// Minimal percent-encoding for URL credentials (encodes each non-safe byte).
-/// Trimmed string slice if the option holds non-blank text, else None.
-fn nonempty(o: &Option<String>) -> Option<&str> {
-    o.as_deref().map(str::trim).filter(|s| !s.is_empty())
 }
 
 fn enc(s: &str) -> String {

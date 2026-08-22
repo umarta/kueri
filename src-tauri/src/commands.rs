@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::db::ddl::ColumnDef;
 use crate::db::driver::{
     ColumnInfo, ForeignKey, IndexInfo, ProcessInfo, QueryResult, RoleInfo, SchemaInfo, TableInfo,
@@ -22,7 +22,7 @@ pub fn read_text_file(path: String) -> AppResult<String> {
 }
 
 #[tauri::command]
-pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> AppResult<String> {
+pub async fn connect(state: State<'_, AppState>, config: ConnectionConfigV2) -> AppResult<String> {
     let mut config = config;
     // Open an SSH tunnel first and point the driver at the local forward.
     // TODO(Task 8): restore SSH tunnel support via config.ssh (SshRef).

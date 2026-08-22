@@ -7,7 +7,7 @@ use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::{Column, Executor, Row, Sqlite, ValueRef};
 use tokio::sync::Mutex;
 
-use crate::db::connect::ConnectionConfig;
+use crate::db::connect::ConnectionConfigV2;
 use crate::db::ddl::Dialect;
 use crate::db::driver::{
     ColumnInfo, Driver, ForeignKey, IndexInfo, QueryResult, SchemaInfo, TableInfo,
@@ -21,7 +21,7 @@ pub struct SqliteDriver {
 }
 
 impl SqliteDriver {
-    pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Self> {
+    pub async fn connect(cfg: &ConnectionConfigV2) -> AppResult<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(3)
             .connect(&cfg.sqlite_url())
