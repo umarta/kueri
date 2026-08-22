@@ -5,6 +5,13 @@ mod error;
 mod menu;
 mod persist;
 mod pgtools;
+mod migration;
+mod safety;
+mod secrets;
+mod ssh {
+    pub mod profile;
+}
+mod tls;
 
 use db::pool::AppState;
 

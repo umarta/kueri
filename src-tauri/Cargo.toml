@@ -33,6 +33,8 @@ sqlx = { version = "0.8", default-features = false, features = [
   "json",
   "bigdecimal",
 ] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+secrecy = { version = "0.10", features = ["serde"] }
 
 # --- Drivers not covered by sqlx ---
 # SQL Server: sqlx dropped MSSQL, so we use tiberius (see db/sqlserver.rs)
