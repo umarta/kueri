@@ -81,6 +81,14 @@ pub struct RoleInfo {
 /// the app simple while supporting many databases.
 #[async_trait]
 pub trait Driver: Send + Sync {
+    /// Databases visible to the current session. Postgres/MySQL return the
+    /// server-wide list (filtered for user-relevant DBs); SQLite returns the
+    /// single file. Drivers that cannot enumerate return the default `Err`.
+    async fn list_databases(&self) -> AppResult<Vec<String>> {
+        Err(AppError::Other(
+            "Listing databases isn't supported for this driver.".into(),
+        ))
+    }
     async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>>;
     async fn list_tables(&self, schema: &str) -> AppResult<Vec<TableInfo>>;
     async fn list_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>>;

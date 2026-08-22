@@ -45,6 +45,19 @@ impl Driver for MySqlDriver {
         Dialect::MySql
     }
 
+    async fn list_databases(&self) -> AppResult<Vec<String>> {
+        // MySQL: schemas ARE databases. Reuse the same catalog query but return
+        // bare names for the DB switcher UI.
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT CAST(schema_name AS CHAR) FROM information_schema.schemata \
+             WHERE schema_name NOT IN ('mysql','sys','performance_schema','information_schema') \
+             ORDER BY schema_name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
     async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>> {
         // In MySQL a "schema" is a database.
         let rows: Vec<(String,)> = sqlx::query_as(

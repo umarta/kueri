@@ -46,6 +46,16 @@ impl Driver for PgDriver {
         Dialect::Postgres
     }
 
+    async fn list_databases(&self) -> AppResult<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT datname FROM pg_database \
+             WHERE NOT datistemplate AND datallowconn ORDER BY datname",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(n,)| n).collect())
+    }
+
     async fn list_schemas(&self) -> AppResult<Vec<SchemaInfo>> {
         let rows: Vec<(String,)> = sqlx::query_as(
             "SELECT schema_name FROM information_schema.schemata \

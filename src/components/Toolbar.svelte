@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import { activeConnection } from "../lib/stores/connection";
+  import { createEventDispatcher, tick } from "svelte";
+  import { activeConnection, activeConnectionId } from "../lib/stores/connection";
   import { dbKind, statusVar } from "../lib/dbKinds";
   import type { SafetyLevel } from "../lib/types";
   import { humanLabel } from "../lib/safety/labels";
+  import { api } from "../lib/tauri";
 
   export let sidebarOpen = true;
   export let logOpen = false;
@@ -25,11 +26,62 @@
     begin: void;
     commit: void;
     rollback: void;
+    switchDatabase: string;
   }>();
 
   $: conn = $activeConnection;
   $: meta = conn ? dbKind(conn.kind) : null;
+  // SQLite has one DB per file; don't render the switcher for it.
+  $: canSwitchDb = conn?.kind === "postgres" || conn?.kind === "mysql";
+
+  let dbPickerOpen = false;
+  let dbList: string[] = [];
+  let dbLoading = false;
+  let dbError = "";
+  let dbSwitching = "";
+
+  async function toggleDbPicker() {
+    if (dbPickerOpen) {
+      dbPickerOpen = false;
+      return;
+    }
+    if (!$activeConnectionId) return;
+    dbPickerOpen = true;
+    dbLoading = true;
+    dbError = "";
+    try {
+      dbList = await api.listDatabases($activeConnectionId);
+    } catch (e) {
+      dbError = (e as { message?: string })?.message ?? String(e);
+      dbList = [];
+    } finally {
+      dbLoading = false;
+    }
+  }
+
+  async function pickDb(name: string) {
+    if (!conn || name === conn.database || dbSwitching) return;
+    dbSwitching = name;
+    dbError = "";
+    try {
+      dispatch("switchDatabase", name);
+      // Close popover after the parent takes over; parent will refresh the sidebar.
+      await tick();
+      dbPickerOpen = false;
+    } finally {
+      dbSwitching = "";
+    }
+  }
+
+  function onDocClick(e: MouseEvent) {
+    if (!dbPickerOpen) return;
+    const t = e.target as Node | null;
+    const root = document.getElementById("db-picker-root");
+    if (root && t && !root.contains(t)) dbPickerOpen = false;
+  }
 </script>
+
+<svelte:window on:click={onDocClick} />
 
 <header class="toolbar">
   <div class="left">
@@ -54,7 +106,45 @@
         {#if conn.tag}<span class="env">{conn.tag.toUpperCase()}</span><span class="sep">·</span>{/if}
         <span class="name">{conn.name}</span>
         <span class="sep">·</span>
-        <span class="db">{conn.kind === "sqlite" ? conn.file_path ?? conn.database : conn.database || meta.label}</span>
+        {#if canSwitchDb}
+          <div id="db-picker-root" class="db-picker">
+            <button
+              type="button"
+              class="db db-btn"
+              title="Switch database on this connection"
+              on:click|stopPropagation={toggleDbPicker}
+            >
+              {conn.database || meta.label}
+              <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            {#if dbPickerOpen}
+              <div class="db-pop" role="menu">
+                {#if dbLoading}
+                  <div class="db-empty">Loading…</div>
+                {:else if dbError}
+                  <div class="db-empty db-err">{dbError}</div>
+                {:else if dbList.length === 0}
+                  <div class="db-empty">No databases</div>
+                {:else}
+                  {#each dbList as name (name)}
+                    <button
+                      type="button"
+                      class="db-item"
+                      class:current={name === conn.database}
+                      disabled={dbSwitching === name}
+                      on:click={() => pickDb(name)}
+                    >
+                      <span class="chk">{name === conn.database ? "✓" : ""}</span>
+                      <span class="db-name">{name}</span>
+                    </button>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {:else}
+          <span class="db">{conn.kind === "sqlite" ? conn.file_path ?? conn.database : conn.database || meta.label}</span>
+        {/if}
       </div>
     {/if}
   </div>
@@ -184,4 +274,34 @@
   .name { font-weight: 600; color: var(--ink); white-space: nowrap; }
   .db { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sep { color: var(--faint); }
+
+  .db-picker { position: relative; }
+  .db-btn {
+    display: inline-flex; align-items: center; gap: var(--s-1);
+    font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    padding: 2px var(--s-2); border-radius: var(--r-xs);
+  }
+  .db-btn:hover { background: var(--bg-elevated); color: var(--ink); }
+  .db-btn svg { opacity: 0.6; }
+  .db-pop {
+    position: absolute; top: calc(100% + 4px); left: 0;
+    min-width: 220px; max-width: 320px; max-height: 320px;
+    overflow-y: auto;
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: var(--r-sm); box-shadow: var(--shadow-2, 0 6px 20px rgba(0,0,0,0.25));
+    z-index: 50; padding: 4px 0;
+  }
+  .db-empty { padding: var(--s-3) var(--s-4); font-size: 12px; color: var(--muted); }
+  .db-empty.db-err { color: var(--danger); }
+  .db-item {
+    display: flex; align-items: center; gap: var(--s-2);
+    width: 100%; padding: 6px var(--s-3);
+    font-size: 12.5px; color: var(--ink-soft); text-align: left;
+    font-family: var(--font-mono);
+  }
+  .db-item:hover:not(:disabled) { background: var(--bg-elevated); color: var(--ink); }
+  .db-item:disabled { opacity: 0.5; }
+  .db-item.current { color: var(--accent); }
+  .db-item .chk { width: 12px; color: var(--accent); font-weight: 700; }
+  .db-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
