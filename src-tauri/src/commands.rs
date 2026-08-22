@@ -25,7 +25,8 @@ pub fn read_text_file(path: String) -> AppResult<String> {
 pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> AppResult<String> {
     let mut config = config;
     // Open an SSH tunnel first and point the driver at the local forward.
-    let tunnel = if config.ssh_enabled {
+    // TODO(Task 8): restore SSH tunnel support via config.ssh (SshRef).
+    let tunnel = if config.ssh.is_some() {
         let (local_port, child) = crate::db::tunnel::open(&config).await?;
         config.host = "127.0.0.1".into();
         config.port = local_port;
@@ -35,11 +36,12 @@ pub async fn connect(state: State<'_, AppState>, config: ConnectionConfig) -> Ap
     };
     // If db::open fails, `tunnel` drops here and kill_on_drop tears it down.
     let driver = crate::db::open(&config).await?;
-    state.insert(config.id.clone(), Arc::from(driver));
+    let id_str = config.id.to_string();
+    state.insert(id_str.clone(), Arc::from(driver));
     if let Some(child) = tunnel {
-        state.insert_tunnel(config.id.clone(), child);
+        state.insert_tunnel(id_str.clone(), child);
     }
-    Ok(config.id)
+    Ok(id_str)
 }
 
 #[tauri::command]

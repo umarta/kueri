@@ -57,8 +57,10 @@ async fn pg_dump(
     contents: &str,
     tools: &str,
 ) -> AppResult<String> {
+    // TODO(Task 7/8): resolve PasswordSource to plaintext before passing to env.
+    let password_placeholder = String::new();
     let mut cmd = Command::new(bin(tools, "pg_dump"));
-    cmd.env("PGPASSWORD", &cfg.password)
+    cmd.env("PGPASSWORD", &password_placeholder)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-p")
@@ -88,8 +90,10 @@ async fn mysqldump(
     contents: &str,
     tools: &str,
 ) -> AppResult<String> {
+    // TODO(Task 7/8): resolve PasswordSource to plaintext before passing to env.
+    let password_placeholder = String::new();
     let mut cmd = Command::new(bin(tools, "mysqldump"));
-    cmd.env("MYSQL_PWD", &cfg.password)
+    cmd.env("MYSQL_PWD", &password_placeholder)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-P")
@@ -130,8 +134,10 @@ pub async fn pg_import(cfg: ConnectionConfig, path: String, tools: String) -> Ap
 async fn mysql_restore(cfg: &ConnectionConfig, path: &str, tools: &str) -> AppResult<String> {
     let file =
         std::fs::File::open(path).map_err(|e| AppError::Other(format!("open {path}: {e}")))?;
+    // TODO(Task 7/8): resolve PasswordSource to plaintext before passing to env.
+    let password_placeholder = String::new();
     let mut cmd = Command::new(bin(tools, "mysql"));
-    cmd.env("MYSQL_PWD", &cfg.password)
+    cmd.env("MYSQL_PWD", &password_placeholder)
         .arg("-h")
         .arg(&cfg.host)
         .arg("-P")
@@ -179,7 +185,9 @@ async fn pg_restore_or_psql(cfg: &ConnectionConfig, path: &str, tools: &str) -> 
             .arg(path);
         (c, "psql")
     };
-    cmd.env("PGPASSWORD", &cfg.password);
+    // TODO(Task 7/8): resolve PasswordSource to plaintext before passing to env.
+    let password_placeholder = String::new();
+    cmd.env("PGPASSWORD", &password_placeholder);
     run(cmd, tool).await
 }
 

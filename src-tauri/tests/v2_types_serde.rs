@@ -1,4 +1,5 @@
 use kueri_lib::{safety::SafetyLevel, secrets::PasswordSource, ssh::profile::{SshRef, SshProfile, SshAuth}, tls::{TlsConfig, TlsMode}};
+use kueri_lib::db::{connect::{ConnectionConfigV2, SCHEMA_VERSION}, DbKind};
 use uuid::Uuid;
 
 fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(value: T) {
@@ -46,4 +47,26 @@ fn ssh_ref_variants_roundtrip() {
     };
     roundtrip(SshRef::Profile(profile.id));
     roundtrip(SshRef::Inline(profile));
+}
+
+#[test]
+fn connection_config_v2_roundtrip() {
+    let cfg = ConnectionConfigV2 {
+        id: Uuid::new_v4(),
+        schema_version: SCHEMA_VERSION,
+        name: "prod-analytics".into(),
+        kind: DbKind::Postgres,
+        host: "db.internal".into(),
+        port: 5432,
+        database: "analytics".into(),
+        user: "readonly".into(),
+        password: PasswordSource::Keychain,
+        tls: Some(TlsConfig { mode: TlsMode::Require, ca_path: None, cert_path: None, key_path: None }),
+        ssh: None,
+        safety: SafetyLevel::ConfirmDestructive,
+        color: Some("prod".into()),
+        tags: vec!["prod".into(), "analytics".into()],
+        file_path: None,
+    };
+    roundtrip(cfg);
 }

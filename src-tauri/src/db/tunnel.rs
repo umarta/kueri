@@ -25,14 +25,17 @@ fn free_port() -> AppResult<u16> {
 /// Open a tunnel and return `(local_port, ssh_child)`. The child is configured
 /// to be killed when dropped, so disconnecting (dropping it) tears the tunnel down.
 pub async fn open(cfg: &ConnectionConfig) -> AppResult<(u16, Child)> {
+    // TODO(Task 8): extract SSH params from cfg.ssh (SshRef / SshProfile).
+    // For now, return an error — SSH tunnels are disabled until Task 8.
+    let _ = cfg;
+    return Err(crate::error::AppError::Other(
+        "SSH tunnel not yet implemented for v2 connection schema (TODO Task 8).".into(),
+    ));
+    #[allow(unreachable_code)]
     let lp = free_port()?;
-    let ssh_port = if cfg.ssh_port == 0 { 22 } else { cfg.ssh_port };
-    let db_host = if cfg.host.is_empty() {
-        "127.0.0.1"
-    } else {
-        cfg.host.as_str()
-    };
-    let target = format!("{}@{}", cfg.ssh_user, cfg.ssh_host);
+    let ssh_port: u16 = 22;
+    let db_host = "127.0.0.1";
+    let target = String::new();
     let fwd = format!("127.0.0.1:{lp}:{db_host}:{}", cfg.port);
 
     let mut cmd = Command::new("ssh");
@@ -46,14 +49,6 @@ pub async fn open(cfg: &ConnectionConfig) -> AppResult<(u16, Child)> {
         .arg(ssh_port.to_string())
         .arg("-L")
         .arg(&fwd);
-    if let Some(key) = cfg
-        .ssh_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        cmd.arg("-i").arg(key);
-    }
     cmd.arg(&target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

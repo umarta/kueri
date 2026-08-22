@@ -27,12 +27,10 @@ pub async fn connect(cfg: &ConnectionConfig) -> AppResult<Box<dyn Driver>> {
     if !cfg.database.is_empty() {
         config.database(&cfg.database);
     }
-    config.authentication(AuthMethod::sql_server(&cfg.user, &cfg.password));
-    config.encryption(if cfg.ssl {
-        EncryptionLevel::Required
-    } else {
-        EncryptionLevel::NotSupported
-    });
+    // TODO(Task 7/8): resolve PasswordSource to a plaintext password and use TlsConfig.
+    let password_placeholder = "";
+    config.authentication(AuthMethod::sql_server(&cfg.user, password_placeholder));
+    config.encryption(EncryptionLevel::NotSupported);
     // Desktop client: accept self-signed certs. TODO: expose a "verify cert" toggle.
     config.trust_cert();
 

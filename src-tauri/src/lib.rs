@@ -1,6 +1,6 @@
 mod clients;
 mod commands;
-mod db;
+pub mod db;
 mod error;
 mod menu;
 mod persist;

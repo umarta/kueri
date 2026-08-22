@@ -1,109 +1,53 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
+use crate::safety::SafetyLevel;
+use crate::secrets::PasswordSource;
+use crate::ssh::profile::SshRef;
+use crate::tls::TlsConfig;
 use super::DbKind;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ConnectionConfig {
-    pub id: String,
+pub const SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ConnectionConfigV2 {
+    pub id: Uuid,
+    pub schema_version: u32,
     pub name: String,
     pub kind: DbKind,
-    #[serde(default)]
     pub host: String,
-    #[serde(default)]
     pub port: u16,
-    #[serde(default)]
     pub database: String,
-    #[serde(default)]
     pub user: String,
+    pub password: PasswordSource,
     #[serde(default)]
-    pub password: String,
+    pub tls: Option<TlsConfig>,
     #[serde(default)]
-    pub ssl: bool,
-    /// TLS mode override (Postgres: disable/allow/prefer/require/verify-ca/verify-full;
-    /// MySQL: DISABLED/PREFERRED/REQUIRED/VERIFY_CA/VERIFY_IDENTITY). Empty = derive from `ssl`.
+    pub ssh: Option<SshRef>,
     #[serde(default)]
-    pub ssl_mode: Option<String>,
-    /// Optional TLS file paths (CA / client cert / client key).
+    pub safety: SafetyLevel,
     #[serde(default)]
-    pub ssl_ca: Option<String>,
+    pub color: Option<String>,
     #[serde(default)]
-    pub ssl_cert: Option<String>,
-    #[serde(default)]
-    pub ssl_key: Option<String>,
-    /// SQLite only: path to the .db file.
+    pub tags: Vec<String>,
     #[serde(default)]
     pub file_path: Option<String>,
-
-    // ── SSH tunnel (optional) ────────────────────────────────────────────────
-    #[serde(default)]
-    pub ssh_enabled: bool,
-    #[serde(default)]
-    pub ssh_host: String,
-    #[serde(default)]
-    pub ssh_port: u16,
-    #[serde(default)]
-    pub ssh_user: String,
-    /// Path to a private key (key/agent auth only — no password prompts).
-    #[serde(default)]
-    pub ssh_key: Option<String>,
 }
 
-impl ConnectionConfig {
+/// Temporary alias so downstream code still parses while we work through Tasks 4–8.
+/// Removed at the end of Task 8.
+pub type ConnectionConfig = ConnectionConfigV2;
+
+// TODO(Task 7): Rewrite URL builders to use the new field shapes (TlsConfig, PasswordSource).
+// Stub bodies are placeholders so downstream callers (postgres.rs / mysql.rs / sqlite.rs)
+// continue to compile. Task 7 replaces these with real implementations.
+impl ConnectionConfigV2 {
     pub fn pg_url(&self) -> String {
-        let sslmode = nonempty(&self.ssl_mode)
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                if self.ssl {
-                    "require".into()
-                } else {
-                    "prefer".into()
-                }
-            });
-        let mut url = format!(
-            "postgres://{}:{}@{}:{}/{}?sslmode={}",
-            enc(&self.user),
-            enc(&self.password),
-            self.host,
-            self.port,
-            self.database,
-            sslmode
-        );
-        if let Some(ca) = nonempty(&self.ssl_ca) {
-            url.push_str(&format!("&sslrootcert={}", enc(ca)));
-        }
-        if let Some(cert) = nonempty(&self.ssl_cert) {
-            url.push_str(&format!("&sslcert={}", enc(cert)));
-        }
-        if let Some(key) = nonempty(&self.ssl_key) {
-            url.push_str(&format!("&sslkey={}", enc(key)));
-        }
-        url
+        unimplemented!("TODO(Task 7): build postgres URL from TlsConfig + PasswordSource")
     }
 
     pub fn mysql_url(&self) -> String {
-        let mode = nonempty(&self.ssl_mode)
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                if self.ssl {
-                    "REQUIRED".into()
-                } else {
-                    "PREFERRED".into()
-                }
-            });
-        let mut url = format!(
-            "mysql://{}:{}@{}:{}/{}?ssl-mode={}",
-            enc(&self.user),
-            enc(&self.password),
-            self.host,
-            self.port,
-            self.database,
-            mode
-        );
-        // sqlx MySQL takes the CA via the URL; client cert/key aren't URL-configurable.
-        if let Some(ca) = nonempty(&self.ssl_ca) {
-            url.push_str(&format!("&ssl-ca={}", enc(ca)));
-        }
-        url
+        unimplemented!("TODO(Task 7): build mysql URL from TlsConfig + PasswordSource")
     }
 
     pub fn sqlite_url(&self) -> String {
