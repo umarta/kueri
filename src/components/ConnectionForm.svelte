@@ -40,6 +40,9 @@
   let sshUser = (config.ssh?.kind === "inline" ? config.ssh.value.user : "") ?? "";
   let sshKey = (config.ssh?.kind === "inline" && config.ssh.value.auth.kind === "key-file" ? config.ssh.value.auth.path : "") ?? "";
 
+  // Ensure safety has a default when not set (e.g. older persisted configs).
+  $: if (config && !config.safety) config.safety = "confirm-destructive";
+
   // Load plaintext from keychain when editing an existing connection.
   resolvePassword(config).then((p) => { if (p) plaintext = p; });
 
@@ -176,6 +179,18 @@
         <input class="field tag" bind:value={config.tag} placeholder="tag (e.g. staging)" />
       </div>
     </div>
+
+    <label class="row">
+      <span class="lbl">Safety</span>
+      <select class="field" bind:value={config.safety}>
+        <option value="off">Off — no guards</option>
+        <option value="warn">Warn — banner only</option>
+        <option value="confirm-destructive">Confirm destructive (default)</option>
+        <option value="confirm-writes">Confirm writes</option>
+        <option value="confirm-ddl">Confirm DDL</option>
+        <option value="read-only">Read-only</option>
+      </select>
+    </label>
 
     {#if isSqlite}
       <label class="row">

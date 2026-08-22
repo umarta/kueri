@@ -30,7 +30,7 @@
     workspaceStates, currentWorkspace,
     schemaCatalog, activeSchema, readOnly, inTransaction,
     ensureWorkspace, dropWorkspace,
-    setSafety, setInTransaction,
+    setSafety, setInTransaction, dismissBanner,
     catalogColumns,
     addTab, removeTab, updateTab, focusTab,
   } from "./lib/stores/workspaces";
@@ -40,6 +40,7 @@
   import SafetyConfirm from "./components/SafetyConfirm.svelte";
   import { runQuerySafely, CancelledByUser, isSafetyRejected } from "./lib/safety/run";
   import { safetyPrompt, showSafetyModal } from "./lib/safety/modal";
+  import { bannerText } from "./lib/safety/labels";
   import { get } from "svelte/store";
 
   let sidebarOpen = true;
@@ -1206,6 +1207,8 @@
       readOnly={$readOnly}
       inTxn={activeInTxn}
       {txnBusy}
+      safety={$currentWorkspace?.safety ?? "off"}
+      configSafety={$activeConnection?.safety ?? "off"}
       on:disconnect={disconnect}
       on:refresh={refresh}
       on:toggleSidebar={() => (sidebarOpen = !sidebarOpen)}
@@ -1237,6 +1240,17 @@
           on:new={newTab}
           on:pin={(e) => pinTab(e.detail)}
         />
+
+        {#if $currentWorkspace && $currentWorkspace.safety !== "off" && !$currentWorkspace.dismissedSafetyBanner}
+          <div class="safety-banner severity-{$currentWorkspace.safety}">
+            <span>{bannerText($currentWorkspace.safety)}</span>
+            <button
+              type="button"
+              aria-label="Dismiss safety banner"
+              on:click={() => $activeConnectionId && dismissBanner($activeConnectionId)}
+            >×</button>
+          </div>
+        {/if}
 
         {#if tab.kind === "query"}
           {#key focusedTabId}
@@ -1539,4 +1553,22 @@
     border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
     font-family: var(--font-mono); font-size: 11.5px; white-space: pre-wrap; flex: none;
   }
+
+  .safety-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--banner-bg, #fef3c7);
+    color: var(--banner-fg, #78350f);
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    flex: none;
+  }
+  .safety-banner.severity-read-only { background: #fee2e2; color: #7f1d1d; }
+  .safety-banner.severity-confirm-writes,
+  .safety-banner.severity-confirm-ddl { background: #ffedd5; color: #7c2d12; }
+  .safety-banner button {
+    background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
+    color: inherit; opacity: 0.6;
+  }
+  .safety-banner button:hover { opacity: 1; }
 </style>
