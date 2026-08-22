@@ -42,6 +42,11 @@
   import { safetyPrompt, showSafetyModal } from "./lib/safety/modal";
   import { bannerText } from "./lib/safety/labels";
   import { get } from "svelte/store";
+  import {
+    markHydrated,
+    startAutosave,
+  } from "./lib/persistence/workspaceAutosave";
+  import type { PersistedTab } from "./lib/types";
 
   let sidebarOpen = true;
   let sidebar: Sidebar;
@@ -965,6 +970,84 @@
       /* storage unavailable */
     }
   }
+  async function hydrateWorkspacesFromDisk(surviving: Set<string>): Promise<string | null> {
+    let file: import("./lib/types").WorkspaceFile;
+    try {
+      file = await api.loadWorkspaces();
+    } catch (e) {
+      console.warn("load workspaces.json:", e);
+      return null;
+    }
+    for (const pw of file.workspaces) {
+      if (!surviving.has(pw.connection_id)) continue;
+      const restoredTabs = pw.tabs.map((pt: PersistedTab): QueryTab => {
+        if (pt.kind === "query") {
+          return {
+            id: pt.id,
+            kind: "query",
+            title: pt.title,
+            doc: pt.sql,
+            result: null,
+            error: null,
+            running: false,
+            view: "data",
+            selected: null,
+            isView: false,
+            editableTable: null,
+            pkColumns: [],
+            columns: [],
+            cellEdits: {},
+            filters: [],
+            filtersOpen: false,
+            selectedRow: null,
+            sort: [],
+            offset: 0,
+            foreignKeys: [],
+            results: [],
+            resultIdx: 0,
+            preview: false,
+          };
+        }
+        return {
+          id: pt.id,
+          kind: "table",
+          title: `${pt.schema}.${pt.table}`,
+          doc: "",
+          result: null,
+          error: null,
+          running: false,
+          view: "data",
+          selected: { schema: pt.schema, table: pt.table },
+          isView: false,
+          editableTable: null,
+          pkColumns: [],
+          columns: [],
+          cellEdits: {},
+          filters: [],
+          filtersOpen: false,
+          selectedRow: null,
+          sort: [],
+          offset: 0,
+          foreignKeys: [],
+          results: [],
+          resultIdx: 0,
+          preview: false,
+        };
+      });
+      workspaceStates.update((m) => {
+        const w = m.get(pw.connection_id);
+        if (!w) return m;
+        w.activeSchema = pw.active_schema;
+        w.tabs = restoredTabs;
+        w.focusedTabId = pw.focused_tab_id;
+        return new Map(m);
+      });
+    }
+    return file.last_active_id && surviving.has(file.last_active_id)
+      ? file.last_active_id
+      : null;
+  }
+
   async function restoreSession() {
     let sess: { open?: string[]; active?: string | null } | null = null;
     try {
@@ -972,7 +1055,11 @@
     } catch {
       /* ignore */
     }
-    if (!sess?.open?.length) return;
+    if (!sess?.open?.length) {
+      markHydrated();
+      startAutosave();
+      return;
+    }
     const saved = await api.loadConnections().catch(() => [] as ConnectionConfig[]);
     for (const cid of sess.open) {
       const cfg = saved.find((c) => c.id === cid);
@@ -987,12 +1074,27 @@
         /* skip connections that no longer reach */
       }
     }
+    const surviving = new Set($workspaces.map((w) => w.id));
+    const restoredActive = await hydrateWorkspacesFromDisk(surviving);
+    if (restoredActive) {
+      const restoredTarget = $workspaces.find((w) => w.id === restoredActive);
+      if (restoredTarget) {
+        activeConnection.set(restoredTarget.config);
+        activeConnectionId.set(restoredTarget.id);
+        markHydrated();
+        startAutosave();
+        reloadSidebar();
+        return;
+      }
+    }
     const target = $workspaces.find((w) => w.id === sess.active) ?? $workspaces[0];
     if (target) {
       activeConnection.set(target.config);
       activeConnectionId.set(target.id);
       reloadSidebar();
     }
+    markHydrated();
+    startAutosave();
   }
   async function reloadSidebar() {
     await tick();
