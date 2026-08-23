@@ -35,7 +35,7 @@
     addTab, removeTab, updateTab, focusTab,
   } from "./lib/stores/workspaces";
   import { api } from "./lib/tauri";
-  import { logSql, logActivity } from "./lib/stores/log";
+  import { logSql, logActivity, initQueryLog } from "./lib/stores/log";
   import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
   import SafetyConfirm from "./components/SafetyConfirm.svelte";
   import { runQuerySafely, CancelledByUser, isSafetyRejected, isNeedsConfirmation } from "./lib/safety/run";
@@ -371,14 +371,14 @@
       t.result = await runQuerySafely($activeConnectionId, sql, safety, showSafetyModal, t.id);
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms });
-      if (log) logSql(sql, { ms });
+      if (log) logSql(sql, { ms, rowCount: t.result?.row_count, connectionId: $activeConnectionId });
     } catch (e) {
       if (e instanceof CancelledByUser) { t.running = false; sync(t); return; }
       if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); t.running = false; sync(t); return; }
       t.error = String(e); t.result = null;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms, error: String(e) });
-      if (log) logSql(sql, { ms, error: String(e) });
+      if (log) logSql(sql, { ms, error: String(e), connectionId: $activeConnectionId });
     } finally {
       t.running = false; sync(t);
     }
@@ -452,7 +452,7 @@
       t.result = result;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms });
-      logSql(sql, { ms });
+      logSql(sql, { ms, rowCount: t.result?.row_count, connectionId: $activeConnectionId });
     } catch (e) {
       if (e instanceof CancelledByUser) { t.running = false; sync(t); return; }
       if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); t.running = false; sync(t); return; }
@@ -460,7 +460,7 @@
       t.result = null;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms, error: String(e) });
-      logSql(sql, { ms, error: String(e) });
+      logSql(sql, { ms, error: String(e), connectionId: $activeConnectionId });
     } finally {
       t.running = false; sync(t);
     }
@@ -489,14 +489,14 @@
         collected.push(r);
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms });
-        logSql(s, { ms });
+        logSql(s, { ms, rowCount: r.row_count, connectionId: $activeConnectionId });
       } catch (e) {
         if (e instanceof CancelledByUser) { break; }
         if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); break; }
         t.error = `Statement ${idx + 1} of ${stmts.length} failed: ${(e as { message?: string })?.message ?? String(e)}`;
         const ms = Math.round(performance.now() - start);
         logActivity(s, { ms, error: String(e) });
-        logSql(s, { ms, error: String(e) });
+        logSql(s, { ms, error: String(e), connectionId: $activeConnectionId });
         break;
       }
     }
@@ -1272,6 +1272,11 @@
       unlistenMenu = await listen<string>("menu", (e) => handleMenu(e.payload));
     } catch {
       /* not running under Tauri (browser dev) */
+    }
+    try {
+      await initQueryLog();
+    } catch {
+      /* ignore — starts empty */
     }
     try {
       await restoreSession();
