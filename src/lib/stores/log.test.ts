@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { get } from "svelte/store";
 
 // Mock the api before importing log.ts so the module picks up the mock.
-vi.mock("../../tauri", () => ({
+vi.mock("../tauri", () => ({
   api: {
     loadQueryHistory: vi.fn().mockResolvedValue([]),
     saveQueryHistory: vi.fn().mockResolvedValue(undefined),
