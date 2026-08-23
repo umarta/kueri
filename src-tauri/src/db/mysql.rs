@@ -382,11 +382,7 @@ impl Driver for MySqlDriver {
         }
         let mut q = sqlx::query(sql);
         for v in params {
-            match v {
-                serde_json::Value::String(s) => q = q.bind(s.clone()),
-                serde_json::Value::Null => q = q.bind(Option::<String>::None),
-                _ => q = q.bind(v.to_string()),
-            }
+            q = q.bind(crate::db::driver::json_to_text_param(v));
         }
         let rows = q.fetch_all(&self.pool).await?;
         let columns: Vec<String> = if let Some(r) = rows.first() {

@@ -407,3 +407,47 @@ pub trait Driver: Send + Sync {
         ))
     }
 }
+
+/// Maps a JSON parameter value to a text binding.
+/// `None` → SQL NULL (via `Option::<String>::None`); `Some(s)` → bound as TEXT.
+pub(crate) fn json_to_text_param(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Null => None,
+        other => Some(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn null_becomes_none() {
+        assert_eq!(json_to_text_param(&serde_json::Value::Null), None);
+    }
+
+    #[test]
+    fn string_becomes_some() {
+        assert_eq!(
+            json_to_text_param(&json!("hello")),
+            Some("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_string_becomes_some_empty() {
+        assert_eq!(json_to_text_param(&json!("")), Some(String::new()));
+    }
+
+    #[test]
+    fn number_becomes_string_repr() {
+        assert_eq!(json_to_text_param(&json!(42)), Some("42".to_string()));
+    }
+
+    #[test]
+    fn bool_becomes_string_repr() {
+        assert_eq!(json_to_text_param(&json!(true)), Some("true".to_string()));
+    }
+}
