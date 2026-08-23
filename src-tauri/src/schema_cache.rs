@@ -17,12 +17,12 @@ pub struct SchemaCache {
     pub(crate) entries: RwLock<HashMap<Uuid, CachedSchema>>,
 }
 
-pub struct CachedSchema {
+pub(crate) struct CachedSchema {
     schemas: Option<Vec<SchemaInfo>>,
     tables: HashMap<String, Vec<TableInfo>>,
     columns: HashMap<(String, String), Vec<ColumnInfo>>,
     fetched_at: Instant,
-    pub generation: u64,
+    generation: u64,
 }
 
 impl CachedSchema {
