@@ -47,6 +47,7 @@
     startAutosave,
   } from "./lib/persistence/workspaceAutosave";
   import type { PersistedTab } from "./lib/types";
+  import { buildRowEdits, buildUpdateSql } from "./lib/sqlBuilder";
 
   let sidebarOpen = true;
   let sidebar: Sidebar;
@@ -343,6 +344,19 @@
   // Editable when the tab resolves to a single updatable table — always true for a
   // table-browse tab, and for a query tab whose SQL is a simple `SELECT * FROM <table>`.
   $: editing = !!tab.editableTable && !tab.running && !$readOnly;
+  $: stagedSql = (() => {
+    if (!editing || !tab.editableTable || !tab.result) return "";
+    const pendingKeys = Object.keys(tab.cellEdits);
+    if (!pendingKeys.length) return "";
+    const rowEdits = buildRowEdits(tab.cellEdits, tab.result);
+    return buildUpdateSql(
+      rowEdits,
+      tab.result.columns,
+      tab.pkColumns,
+      tab.editableTable,
+      $activeConnection?.kind ?? "postgres"
+    );
+  })();
   // Push local mutations on a QueryTab back into the workspaceStates store so
   // that subscribers (QueryTabs bar, DataGrid, etc.) see the update.
   function sync(t: QueryTab) {
@@ -1338,6 +1352,13 @@
 
     if (!meta) return;
 
+    // ⌘Z → undo the last staged cell edit (when edits are pending).
+    if (!ctrl && !shift && e.key.toLowerCase() === "z" && Object.keys(tab.cellEdits).length) {
+      e.preventDefault();
+      grid?.undo();
+      return;
+    }
+
     // ⌘⌃[ / ⌘⌃] → Data / Structure view (no menu accelerator, so handled here).
     if (ctrl && (e.key === "[" || e.key === "]")) {
       if (tab.kind === "table") { e.preventDefault(); setView(e.key === "[" ? "data" : "structure"); }
@@ -1507,6 +1528,7 @@
                     result={tab.result}
                     columns={tab.columns}
                     bind:edits={tab.cellEdits}
+                    stagedSql={stagedSql}
                     {inserting}
                     {insertEdits}
                     editable={editing}
