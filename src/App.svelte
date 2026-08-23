@@ -319,6 +319,7 @@
       result: null, error: null, running: false, view: "data",
       selected: null, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: [], offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
+      params: {},
     };
   }
   function tableTab(schema: string, table: string): QueryTab {
@@ -327,6 +328,7 @@
       result: null, error: null, running: false, view: "data",
       selected: { schema, table }, isView: false, editableTable: null, pkColumns: [], columns: [], cellEdits: {},
       filters: [], filtersOpen: false, selectedRow: null, sort: [], offset: 0, foreignKeys: [], results: [], resultIdx: 0, preview: false,
+      params: {},
     };
   }
   $: currentWs = $workspaceStates.get($activeConnectionId ?? "");
@@ -418,6 +420,34 @@
     t.resultIdx = idx;
     t.result = t.results[idx];
     sync(t);
+  }
+
+  // Runs SQL that may carry bound parameter values. When params are present,
+  // the SQL is already substituted (positional placeholders) by QueryEditor;
+  // we call executeQueryParams instead of the plain executeQuery path.
+  async function runSqlWithParams(t: QueryTab, sql: string, params: unknown[]) {
+    if (!params.length) {
+      return runSql(t, sql);
+    }
+    if (!$activeConnectionId) return;
+    t.editableTable = null; t.pkColumns = []; t.columns = []; t.results = []; t.resultIdx = 0; sync(t);
+    t.running = true; t.error = null; sync(t);
+    const start = performance.now();
+    try {
+      const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
+      t.result = await api.executeQueryParams($activeConnectionId, sql, params, t.id, safety);
+      const ms = Math.round(performance.now() - start);
+      logActivity(sql, { ms });
+      logSql(sql, { ms });
+    } catch (e) {
+      t.error = (e as { message?: string })?.message ?? String(e);
+      t.result = null;
+      const ms = Math.round(performance.now() - start);
+      logActivity(sql, { ms, error: String(e) });
+      logSql(sql, { ms, error: String(e) });
+    } finally {
+      t.running = false; sync(t);
+    }
   }
 
   async function runSql(t: QueryTab, sql: string) {
@@ -1281,11 +1311,14 @@
           {#key focusedTabId}
             <QueryEditor
               bind:this={editor}
+              bind:params={tab.params}
               running={tab.running}
               dialect={$activeConnection?.kind ?? "postgres"}
               schema={$schemaCatalog}
               initialDoc={tab.doc}
-              on:run={(e) => runSql(tab, e.detail)}
+              connectionId={$activeConnectionId}
+              activeSchema={$activeSchema || "public"}
+              on:run={(e) => runSqlWithParams(tab, e.detail.sql, e.detail.params)}
               on:change={(e) => { if ($activeConnectionId) updateTab($activeConnectionId, tab.id, (x) => { x.doc = e.detail; }); }}
             />
           {/key}

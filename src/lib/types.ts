@@ -192,6 +192,8 @@ export interface QueryTab {
   resultIdx: number;
   /** Preview (italic) table tab — a single-click reuses it; double-click pins it. */
   preview: boolean;
+  /** Named parameter values for :name substitution. */
+  params: Record<string, string>;
 }
 
 /** A foreign-key edge: `column` → `ref_schema.ref_table.ref_column`. */
