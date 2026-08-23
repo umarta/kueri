@@ -372,6 +372,36 @@ impl Driver for MySqlDriver {
         })
     }
 
+    async fn run_query_params(&self, sql: &str, params: &[serde_json::Value]) -> AppResult<QueryResult> {
+        if params.is_empty() {
+            return self.run_query(sql).await;
+        }
+        let mut q = sqlx::query(sql);
+        for v in params {
+            match v {
+                serde_json::Value::String(s) => q = q.bind(s.clone()),
+                serde_json::Value::Null => q = q.bind(Option::<String>::None),
+                _ => q = q.bind(v.to_string()),
+            }
+        }
+        let rows = q.fetch_all(&self.pool).await?;
+        let columns: Vec<String> = if let Some(r) = rows.first() {
+            r.columns().iter().map(|c| c.name().to_string()).collect()
+        } else {
+            Vec::new()
+        };
+        let mut out = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let mut rec = Vec::with_capacity(row.columns().len());
+            for i in 0..row.columns().len() {
+                rec.push(decode(row, i));
+            }
+            out.push(rec);
+        }
+        let row_count = out.len();
+        Ok(QueryResult { columns, rows: out, row_count })
+    }
+
     async fn begin(&self) -> AppResult<()> {
         let mut g = self.txn.lock().await;
         if g.is_some() {
