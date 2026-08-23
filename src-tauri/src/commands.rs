@@ -326,7 +326,7 @@ pub async fn execute_query(
     let res = task.await;
     state.finish_query(&query_id);
     // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
-    if effects.iter().any(|e| matches!(e, SqlEffect::Ddl)) {
+    if effects.iter().any(|e| matches!(e, SqlEffect::Ddl(_))) {
         state.schema_cache.invalidate(uuid);
     }
     match res {
@@ -360,7 +360,7 @@ pub async fn execute_query_confirmed(
     // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
     if effects
         .iter()
-        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl))
+        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl(_)))
     {
         state.schema_cache.invalidate(uuid);
     }
@@ -412,7 +412,7 @@ pub async fn execute_query_params(
     state.finish_query(&query_id);
     if effects
         .iter()
-        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl))
+        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl(_)))
     {
         state.schema_cache.invalidate(uuid);
     }

@@ -87,7 +87,7 @@ impl SafetyLevel {
                     confirm(ConfirmReason::DestructiveNoWhere)
                 }
             }
-            (SafetyLevel::ConfirmDdl, SqlEffect::Ddl) => confirm(ConfirmReason::Ddl),
+            (SafetyLevel::ConfirmDdl, SqlEffect::Ddl(_)) => confirm(ConfirmReason::Ddl),
             _ => SafetyDecision::Allow,
         }
     }
@@ -96,12 +96,12 @@ impl SafetyLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql_classify::SqlEffect;
+    use crate::sql_classify::{DdlKind, SqlEffect};
 
     #[test]
     fn off_allows_everything() {
         assert!(matches!(
-            SafetyLevel::Off.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
+            SafetyLevel::Off.decide(SqlEffect::Ddl(DdlKind::Other), false, "DROP TABLE t"),
             SafetyDecision::Allow
         ));
         assert!(matches!(
@@ -114,7 +114,7 @@ mod tests {
     fn warn_allows_everything_too() {
         // Warn is visual only — no backend gate
         assert!(matches!(
-            SafetyLevel::Warn.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
+            SafetyLevel::Warn.decide(SqlEffect::Ddl(DdlKind::Other), false, "DROP TABLE t"),
             SafetyDecision::Allow
         ));
         assert!(matches!(
@@ -144,7 +144,11 @@ mod tests {
         ));
         // DDL — allow at this level
         assert!(matches!(
-            SafetyLevel::ConfirmDestructive.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
+            SafetyLevel::ConfirmDestructive.decide(
+                SqlEffect::Ddl(DdlKind::DropTable),
+                false,
+                "DROP TABLE t"
+            ),
             SafetyDecision::Allow
         ));
     }
@@ -167,7 +171,11 @@ mod tests {
         ));
         // DDL passes through (still confirmed at Ddl level, not Writes)
         assert!(matches!(
-            SafetyLevel::ConfirmWrites.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
+            SafetyLevel::ConfirmWrites.decide(
+                SqlEffect::Ddl(DdlKind::DropTable),
+                false,
+                "DROP TABLE t"
+            ),
             SafetyDecision::Allow
         ));
         assert!(matches!(
@@ -180,7 +188,11 @@ mod tests {
     fn confirm_ddl_triggers_on_ddl_and_writes() {
         // ConfirmDdl stacks: it confirms Writes AND Ddl
         assert!(matches!(
-            SafetyLevel::ConfirmDdl.decide(SqlEffect::Ddl, false, "CREATE TABLE t (x int)"),
+            SafetyLevel::ConfirmDdl.decide(
+                SqlEffect::Ddl(DdlKind::CreateTable),
+                false,
+                "CREATE TABLE t (x int)"
+            ),
             SafetyDecision::NeedsConfirmation {
                 reason: ConfirmReason::Ddl,
                 ..
@@ -209,7 +221,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            SafetyLevel::ReadOnly.decide(SqlEffect::Ddl, false, "DROP TABLE t"),
+            SafetyLevel::ReadOnly.decide(SqlEffect::Ddl(DdlKind::DropTable), false, "DROP TABLE t"),
             SafetyDecision::Reject {
                 reason: RejectReason::ReadOnlyMode,
                 ..

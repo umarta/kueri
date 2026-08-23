@@ -2,10 +2,20 @@
 //! cache-invalidation. Phase 3 (Safe Mode) will extend this same module.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DdlKind {
+    CreateTable,
+    DropTable,
+    AlterTable,
+    CreateSchema,
+    DropSchema,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SqlEffect {
     Read,
     Write,
-    Ddl,
+    Ddl(DdlKind),
     Unknown,
 }
 
@@ -44,20 +54,91 @@ pub fn classify(sql: &str) -> Vec<SqlEffect> {
 }
 
 pub fn classify_one(statement: &str) -> SqlEffect {
-    // Take the first alphabetic token (case-insensitive), match against verbs.
-    let verb: String = statement
-        .chars()
-        .skip_while(|c| !c.is_ascii_alphabetic())
-        .take_while(|c| c.is_ascii_alphabetic())
-        .collect::<String>()
-        .to_ascii_uppercase();
+    let stripped = strip_comments_and_strings(statement);
+    let mut tokens = stripped
+        .split_ascii_whitespace()
+        .map(|t| t.to_ascii_uppercase());
+
+    let verb = tokens.next().unwrap_or_default();
+    let obj_type = tokens.next().unwrap_or_default();
+
     match verb.as_str() {
         "SELECT" | "SHOW" | "EXPLAIN" | "WITH" | "PRAGMA" | "VALUES" | "DESCRIBE" | "DESC" => {
             SqlEffect::Read
         }
         "INSERT" | "UPDATE" | "DELETE" | "REPLACE" | "MERGE" => SqlEffect::Write,
-        "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "RENAME" => SqlEffect::Ddl,
+        "CREATE" => match obj_type.as_str() {
+            "TABLE" | "TEMPORARY" => SqlEffect::Ddl(DdlKind::CreateTable),
+            "SCHEMA" | "DATABASE" => SqlEffect::Ddl(DdlKind::CreateSchema),
+            _ => SqlEffect::Ddl(DdlKind::Other),
+        },
+        "DROP" => match obj_type.as_str() {
+            "TABLE" => SqlEffect::Ddl(DdlKind::DropTable),
+            "SCHEMA" | "DATABASE" => SqlEffect::Ddl(DdlKind::DropSchema),
+            _ => SqlEffect::Ddl(DdlKind::Other),
+        },
+        "ALTER" => match obj_type.as_str() {
+            "TABLE" => SqlEffect::Ddl(DdlKind::AlterTable),
+            _ => SqlEffect::Ddl(DdlKind::Other),
+        },
+        "TRUNCATE" | "RENAME" => SqlEffect::Ddl(DdlKind::Other),
         _ => SqlEffect::Unknown,
+    }
+}
+
+/// Extract the DDL target object name from a single statement.
+/// Returns `(schema, name)` where `schema` is `None` if unqualified.
+/// Returns `None` if the statement has no target (too short or unrecognised).
+///
+/// Handles `IF [NOT] EXISTS` between the object-type keyword and the name.
+/// Falls back to `None` on anything it cannot parse; callers treat `None`
+/// as "unknown target" and fall back to full-connection invalidation.
+#[allow(dead_code)]
+pub fn extract_ddl_target(stmt: &str) -> Option<(Option<String>, String)> {
+    let stripped = strip_comments_and_strings(stmt);
+    let tokens: Vec<&str> = stripped.split_ascii_whitespace().collect();
+
+    // Minimum: verb + obj_type + name  (e.g. "DROP TABLE t")
+    if tokens.len() < 3 {
+        return None;
+    }
+
+    // tokens[0] = verb, tokens[1] = obj_type, then optional IF [NOT] EXISTS
+    let mut i = 2usize;
+
+    if tokens.get(i).map(|t| t.eq_ignore_ascii_case("IF")) == Some(true) {
+        i += 1; // skip IF
+        if tokens.get(i).map(|t| t.eq_ignore_ascii_case("NOT")) == Some(true) {
+            i += 1; // skip NOT
+        }
+        if tokens.get(i).map(|t| t.eq_ignore_ascii_case("EXISTS")) == Some(true) {
+            i += 1; // skip EXISTS
+        }
+    }
+
+    let raw = tokens.get(i)?;
+    // Strip trailing `(` or `;` and surrounding quote characters
+    let name = raw
+        .trim_end_matches(['(', ';'])
+        .trim_matches(['`', '"', '\'']);
+
+    if name.is_empty() {
+        return None;
+    }
+
+    if let Some(dot) = name.find('.') {
+        let schema = name[..dot]
+            .trim_matches(['`', '"', '\''])
+            .to_string();
+        let tbl = name[dot + 1..]
+            .trim_matches(['`', '"', '\''])
+            .to_string();
+        if schema.is_empty() || tbl.is_empty() {
+            return None;
+        }
+        Some((Some(schema), tbl))
+    } else {
+        Some((None, name.to_string()))
     }
 }
 
@@ -203,14 +284,23 @@ mod tests {
 
     #[test]
     fn create_drop_alter_truncate_rename_are_ddl() {
-        assert_eq!(classify("CREATE TABLE t (x int)"), vec![SqlEffect::Ddl]);
-        assert_eq!(classify("DROP TABLE t"), vec![SqlEffect::Ddl]);
+        assert_eq!(
+            classify("CREATE TABLE t (x int)"),
+            vec![SqlEffect::Ddl(DdlKind::CreateTable)]
+        );
+        assert_eq!(
+            classify("DROP TABLE t"),
+            vec![SqlEffect::Ddl(DdlKind::DropTable)]
+        );
         assert_eq!(
             classify("ALTER TABLE t ADD COLUMN y int"),
-            vec![SqlEffect::Ddl]
+            vec![SqlEffect::Ddl(DdlKind::AlterTable)]
         );
-        assert_eq!(classify("TRUNCATE t"), vec![SqlEffect::Ddl]);
-        assert_eq!(classify("RENAME TABLE a TO b"), vec![SqlEffect::Ddl]);
+        assert_eq!(classify("TRUNCATE t"), vec![SqlEffect::Ddl(DdlKind::Other)]);
+        assert_eq!(
+            classify("RENAME TABLE a TO b"),
+            vec![SqlEffect::Ddl(DdlKind::Other)]
+        );
     }
 
     #[test]
@@ -218,7 +308,11 @@ mod tests {
         let effects = classify("SELECT 1; INSERT INTO t VALUES (1); CREATE TABLE u (x int)");
         assert_eq!(
             effects,
-            vec![SqlEffect::Read, SqlEffect::Write, SqlEffect::Ddl]
+            vec![
+                SqlEffect::Read,
+                SqlEffect::Write,
+                SqlEffect::Ddl(DdlKind::CreateTable)
+            ]
         );
     }
 
@@ -295,5 +389,118 @@ mod tests {
         assert!(parts[0].trim_start().starts_with("SELECT"));
         assert!(parts[1].trim_start().starts_with("DELETE"));
         assert!(parts[2].trim_start().starts_with("INSERT"));
+    }
+
+    #[test]
+    fn ddl_kind_create_table() {
+        assert_eq!(
+            classify_one("CREATE TABLE t (x int)"),
+            SqlEffect::Ddl(DdlKind::CreateTable)
+        );
+        assert_eq!(
+            classify_one("create table IF NOT EXISTS public.users (id int)"),
+            SqlEffect::Ddl(DdlKind::CreateTable)
+        );
+    }
+
+    #[test]
+    fn ddl_kind_drop_table() {
+        assert_eq!(
+            classify_one("DROP TABLE t"),
+            SqlEffect::Ddl(DdlKind::DropTable)
+        );
+        assert_eq!(
+            classify_one("drop table if exists public.users"),
+            SqlEffect::Ddl(DdlKind::DropTable)
+        );
+    }
+
+    #[test]
+    fn ddl_kind_alter_table() {
+        assert_eq!(
+            classify_one("ALTER TABLE t ADD COLUMN y int"),
+            SqlEffect::Ddl(DdlKind::AlterTable)
+        );
+    }
+
+    #[test]
+    fn ddl_kind_create_schema() {
+        assert_eq!(
+            classify_one("CREATE SCHEMA myschema"),
+            SqlEffect::Ddl(DdlKind::CreateSchema)
+        );
+        assert_eq!(
+            classify_one("CREATE DATABASE mydb"),
+            SqlEffect::Ddl(DdlKind::CreateSchema)
+        );
+    }
+
+    #[test]
+    fn ddl_kind_drop_schema() {
+        assert_eq!(
+            classify_one("DROP SCHEMA myschema"),
+            SqlEffect::Ddl(DdlKind::DropSchema)
+        );
+        assert_eq!(
+            classify_one("DROP DATABASE mydb"),
+            SqlEffect::Ddl(DdlKind::DropSchema)
+        );
+    }
+
+    #[test]
+    fn ddl_kind_other_for_truncate_and_rename() {
+        assert_eq!(classify_one("TRUNCATE t"), SqlEffect::Ddl(DdlKind::Other));
+        assert_eq!(
+            classify_one("RENAME TABLE a TO b"),
+            SqlEffect::Ddl(DdlKind::Other)
+        );
+    }
+
+    #[test]
+    fn extract_target_simple_unqualified() {
+        // No schema prefix — returns (None, table_name)
+        assert_eq!(
+            extract_ddl_target("CREATE TABLE users (id int)"),
+            Some((None, "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_target_schema_qualified() {
+        assert_eq!(
+            extract_ddl_target("CREATE TABLE public.users (id int)"),
+            Some((Some("public".to_string()), "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_target_if_not_exists() {
+        assert_eq!(
+            extract_ddl_target("CREATE TABLE IF NOT EXISTS public.users (id int)"),
+            Some((Some("public".to_string()), "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_target_if_exists() {
+        assert_eq!(
+            extract_ddl_target("DROP TABLE IF EXISTS public.users"),
+            Some((Some("public".to_string()), "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_target_alter_table() {
+        assert_eq!(
+            extract_ddl_target("ALTER TABLE public.users ADD COLUMN x INT"),
+            Some((Some("public".to_string()), "users".to_string()))
+        );
+    }
+
+    #[test]
+    fn extract_target_returns_none_on_incomplete_stmt() {
+        // Only verb + object_type, no name
+        assert_eq!(extract_ddl_target("CREATE TABLE"), None);
+        assert_eq!(extract_ddl_target("DROP"), None);
     }
 }
