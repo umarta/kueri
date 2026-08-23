@@ -9,9 +9,37 @@ use crate::db::driver::{
 };
 use crate::db::pool::AppState;
 use crate::error::{AppError, AppResult};
-use crate::sql_classify::{classify, SqlEffect};
 use crate::ssh::profile::{SshProfile, SshRef};
 use crate::ssh::store::SshProfileStore;
+
+fn apply_ddl_invalidation(
+    cache: &crate::schema_cache::SchemaCache,
+    id: uuid::Uuid,
+    ddl: &crate::sql_classify::DdlStatement,
+) {
+    use crate::sql_classify::DdlKind;
+    match ddl.kind {
+        DdlKind::AlterTable => {
+            if let (Some(schema), name) = (ddl.schema.as_deref(), ddl.name.as_str()) {
+                if !name.is_empty() {
+                    cache.invalidate_table_columns(id, schema, name);
+                    return;
+                }
+            }
+            cache.invalidate(id);
+        }
+        DdlKind::CreateTable | DdlKind::DropTable => {
+            if let Some(schema) = ddl.schema.as_deref() {
+                cache.invalidate_schema_tables(id, schema);
+                return;
+            }
+            cache.invalidate(id);
+        }
+        DdlKind::CreateSchema | DdlKind::DropSchema | DdlKind::Other => {
+            cache.invalidate(id);
+        }
+    }
+}
 
 /// Write text to a path (used by CSV/JSON export; the path comes from a save dialog).
 #[tauri::command]
@@ -318,16 +346,16 @@ pub async fn execute_query(
 
     // Existing execute path — unchanged from KUE-002 (schema-cache invalidation on DDL).
     let driver = state.get(uuid)?;
-    // Classify the SQL to detect DDL statements.
-    let effects = classify(&sql);
+    // Classify before moving sql into the spawn closure.
+    let ddl_stmts = crate::sql_classify::classify_ddl_statements(&sql);
     // Run on a task we can abort, so `cancel_query` can stop a long-running query.
     let task = tokio::spawn(async move { driver.run_query(&sql).await });
     state.register_query(query_id.clone(), task.abort_handle());
     let res = task.await;
     state.finish_query(&query_id);
-    // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
-    if effects.iter().any(|e| matches!(e, SqlEffect::Ddl(_))) {
-        state.schema_cache.invalidate(uuid);
+    // Invalidate schema cache with granular precision based on DDL target.
+    for ddl in ddl_stmts {
+        apply_ddl_invalidation(&state.schema_cache, uuid, &ddl);
     }
     match res {
         Ok(inner) => inner,
@@ -351,18 +379,16 @@ pub async fn execute_query_confirmed(
 
     // No pre-flight — the token IS the authorization (issued by execute_query's classifier).
     let driver = state.get(uuid)?;
-    let effects = crate::sql_classify::classify(&sql);
+    // Classify before moving sql into the spawn closure.
+    let ddl_stmts = crate::sql_classify::classify_ddl_statements(&sql);
     // Run on a task we can abort, so `cancel_query` can stop a long-running query.
     let task = tokio::spawn(async move { driver.run_query(&sql).await });
     state.register_query(query_id.clone(), task.abort_handle());
     let res = task.await;
     state.finish_query(&query_id);
-    // Invalidate schema cache if this was a DDL statement, whether or not the query succeeded.
-    if effects
-        .iter()
-        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl(_)))
-    {
-        state.schema_cache.invalidate(uuid);
+    // Invalidate schema cache with granular precision based on DDL target.
+    for ddl in ddl_stmts {
+        apply_ddl_invalidation(&state.schema_cache, uuid, &ddl);
     }
     match res {
         Ok(inner) => inner,
@@ -405,16 +431,15 @@ pub async fn execute_query_params(
     }
 
     let driver = state.get(uuid)?;
-    let effects = crate::sql_classify::classify(&sql);
+    // Classify before moving sql into the spawn closure.
+    let ddl_stmts = crate::sql_classify::classify_ddl_statements(&sql);
     let task = tokio::spawn(async move { driver.run_query_params(&sql, &params).await });
     state.register_query(query_id.clone(), task.abort_handle());
     let res = task.await;
     state.finish_query(&query_id);
-    if effects
-        .iter()
-        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl(_)))
-    {
-        state.schema_cache.invalidate(uuid);
+    // Invalidate schema cache with granular precision based on DDL target.
+    for ddl in ddl_stmts {
+        apply_ddl_invalidation(&state.schema_cache, uuid, &ddl);
     }
     match res {
         Ok(inner) => inner,

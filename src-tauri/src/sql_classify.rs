@@ -45,6 +45,7 @@ pub fn split_statements(sql: &str) -> Vec<String> {
     result
 }
 
+#[allow(dead_code)]
 pub fn classify(sql: &str) -> Vec<SqlEffect> {
     let stripped = strip_comments_and_strings(sql);
     split_statements(&stripped)
@@ -93,7 +94,6 @@ pub fn classify_one(statement: &str) -> SqlEffect {
 /// Handles `IF [NOT] EXISTS` between the object-type keyword and the name.
 /// Falls back to `None` on anything it cannot parse; callers treat `None`
 /// as "unknown target" and fall back to full-connection invalidation.
-#[allow(dead_code)]
 pub fn extract_ddl_target(stmt: &str) -> Option<(Option<String>, String)> {
     let stripped = strip_comments_and_strings(stmt);
     let tokens: Vec<&str> = stripped.split_ascii_whitespace().collect();
@@ -127,12 +127,8 @@ pub fn extract_ddl_target(stmt: &str) -> Option<(Option<String>, String)> {
     }
 
     if let Some(dot) = name.find('.') {
-        let schema = name[..dot]
-            .trim_matches(['`', '"', '\''])
-            .to_string();
-        let tbl = name[dot + 1..]
-            .trim_matches(['`', '"', '\''])
-            .to_string();
+        let schema = name[..dot].trim_matches(['`', '"', '\'']).to_string();
+        let tbl = name[dot + 1..].trim_matches(['`', '"', '\'']).to_string();
         if schema.is_empty() || tbl.is_empty() {
             return None;
         }
@@ -140,6 +136,36 @@ pub fn extract_ddl_target(stmt: &str) -> Option<(Option<String>, String)> {
     } else {
         Some((None, name.to_string()))
     }
+}
+
+/// Parsed representation of a DDL statement's kind and target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DdlStatement {
+    pub kind: DdlKind,
+    /// Schema name, if the DDL target was schema-qualified (e.g. `public.users`).
+    pub schema: Option<String>,
+    /// Object name (table name, schema name, etc.).
+    pub name: String,
+}
+
+/// Return one `DdlStatement` for every DDL statement in `sql`.
+/// Non-DDL statements are filtered out. An empty vec means no DDL was found.
+pub fn classify_ddl_statements(sql: &str) -> Vec<DdlStatement> {
+    split_statements(sql)
+        .into_iter()
+        .filter_map(|stmt| {
+            if let SqlEffect::Ddl(kind) = classify_one(&stmt) {
+                let target = extract_ddl_target(&stmt);
+                Some(DdlStatement {
+                    kind,
+                    schema: target.as_ref().and_then(|(s, _)| s.clone()),
+                    name: target.map(|(_, n)| n).unwrap_or_default(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Does the statement have a WHERE clause at the top level?
@@ -502,5 +528,50 @@ mod tests {
         // Only verb + object_type, no name
         assert_eq!(extract_ddl_target("CREATE TABLE"), None);
         assert_eq!(extract_ddl_target("DROP"), None);
+    }
+
+    #[test]
+    fn classify_ddl_statements_empty_on_no_ddl() {
+        assert!(classify_ddl_statements("SELECT 1").is_empty());
+        assert!(classify_ddl_statements("INSERT INTO t VALUES (1)").is_empty());
+        assert!(classify_ddl_statements("").is_empty());
+    }
+
+    #[test]
+    fn classify_ddl_statements_single_create_table() {
+        let stmts = classify_ddl_statements("CREATE TABLE public.users (id int)");
+        assert_eq!(stmts.len(), 1);
+        assert_eq!(stmts[0].kind, DdlKind::CreateTable);
+        assert_eq!(stmts[0].schema, Some("public".to_string()));
+        assert_eq!(stmts[0].name, "users".to_string());
+    }
+
+    #[test]
+    fn classify_ddl_statements_filters_non_ddl_in_multi_statement() {
+        let stmts = classify_ddl_statements(
+            "SELECT 1; ALTER TABLE public.users ADD COLUMN x INT; SELECT 2",
+        );
+        assert_eq!(stmts.len(), 1);
+        assert_eq!(stmts[0].kind, DdlKind::AlterTable);
+        assert_eq!(stmts[0].schema, Some("public".to_string()));
+        assert_eq!(stmts[0].name, "users".to_string());
+    }
+
+    #[test]
+    fn classify_ddl_statements_unqualified_table() {
+        let stmts = classify_ddl_statements("CREATE TABLE users (id int)");
+        assert_eq!(stmts.len(), 1);
+        assert_eq!(stmts[0].schema, None);
+        assert_eq!(stmts[0].name, "users".to_string());
+    }
+
+    #[test]
+    fn classify_ddl_statements_multiple_ddl() {
+        let stmts = classify_ddl_statements("CREATE TABLE public.a (x int); DROP TABLE public.b");
+        assert_eq!(stmts.len(), 2);
+        assert_eq!(stmts[0].kind, DdlKind::CreateTable);
+        assert_eq!(stmts[0].name, "a".to_string());
+        assert_eq!(stmts[1].kind, DdlKind::DropTable);
+        assert_eq!(stmts[1].name, "b".to_string());
     }
 }
