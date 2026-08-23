@@ -227,11 +227,15 @@
   function commitCell() {
     if (!editing || !result) return;
     const { r, c } = editing;
+    if (selected.size > 1 && selected.has(r)) {
+      bulkSet(c, [...selected], draft);
+      editing = null;
+      return;
+    }
     const k = key(r, c);
     const orig = result.rows[r][c];
     const origStr = isNull(orig) ? "" : fmt(orig);
     if (draft === origStr) {
-      // User typed back the original value — un-stage without touching history.
       delete edits[k];
       edits = edits;
     } else {
@@ -325,8 +329,9 @@
     const k = e.key;
     const printable = k.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
     const isCopy = (e.metaKey || e.ctrlKey) && k.toLowerCase() === "c";
+    const isNullShortcut = editable && e.ctrlKey && e.shiftKey && k.toLowerCase() === "n";
     const nav = ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"];
-    if (!nav.includes(k) && !isCopy && !(printable && editable)) return;
+    if (!nav.includes(k) && !isCopy && !isNullShortcut && !(printable && editable)) return;
     e.preventDefault();
     if (k === "Escape") { active = null; return; }
     if (!active) { active = { r: 0, vc: 0 }; if (k !== "Enter" && !printable) return; }
@@ -337,6 +342,14 @@
     else if (k === "Tab") moveActive(0, e.shiftKey ? -1 : 1);
     else if (k === "Enter") startEditActive();
     else if (isCopy) copyActive();
+    else if (isNullShortcut && active) {
+      const ci = visible[active.vc].i;
+      if (selected.size > 1 && selected.has(active.r)) {
+        bulkSet(ci, [...selected], null);
+      } else {
+        setNullCell(active.r, ci);
+      }
+    }
     else if (printable) startEditActive(k);
   }
 
@@ -511,7 +524,7 @@
                   class="cell"
                   role="gridcell"
                   tabindex="-1"
-                  class:null={isNull(cell) && !isEdited(i, j)}
+                  class:null={(isNull(cell) && !isEdited(i, j)) || (isEdited(i, j) && edits[key(i, j)] === null)}
                   class:edited={isEdited(i, j)}
                   class:active={editing?.r === i && editing?.c === j}
                   class:active-cell={active?.r === i && active?.vc === vc}
