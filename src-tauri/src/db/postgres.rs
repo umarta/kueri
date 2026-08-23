@@ -416,7 +416,11 @@ impl Driver for PgDriver {
         })
     }
 
-    async fn run_query_params(&self, sql: &str, params: &[serde_json::Value]) -> AppResult<QueryResult> {
+    async fn run_query_params(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> AppResult<QueryResult> {
         if params.is_empty() {
             return self.run_query(sql).await;
         }
@@ -443,7 +447,11 @@ impl Driver for PgDriver {
             out.push(rec);
         }
         let row_count = out.len();
-        Ok(QueryResult { columns, rows: out, row_count })
+        Ok(QueryResult {
+            columns,
+            rows: out,
+            row_count,
+        })
     }
 
     async fn begin(&self) -> AppResult<()> {
