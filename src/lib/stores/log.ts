@@ -1,40 +1,55 @@
 import { writable } from "svelte/store";
+import { api } from "../tauri";
 
 export interface LogEntry {
   id: number;
-  time: string; // HH:MM:SS
-  date: string; // YYYY-MM-DD (for History grouping)
+  time: string;               // HH:MM:SS
+  date: string;               // YYYY-MM-DD
   sql: string;
   ms?: number;
+  rowCount?: number;          // rows returned or affected
+  connectionId: string | null;
   error?: string;
 }
 
-const STORAGE = "kueri.querylog";
-const MAX = 500;
+const MAX_QUERY_LOG = 5000;
 
-function loadPersisted(): LogEntry[] {
+let seq = 0;
+
+export const queryLog = writable<LogEntry[]>([]);
+
+// ── Boot hydration ──────────────────────────────────────────────────────────
+/** Call once from App.svelte onMount before startAutosave(). */
+export async function initQueryLog(): Promise<void> {
   try {
-    const raw = localStorage.getItem(STORAGE);
-    return raw ? (JSON.parse(raw) as LogEntry[]) : [];
+    const entries = await api.loadQueryHistory();
+    queryLog.set(entries);
+    if (entries.length > 0) {
+      seq = entries.reduce((m, e) => Math.max(m, e.id), 0);
+    }
   } catch {
-    return [];
+    // Tauri not available (browser dev) or file missing — start empty.
+    queryLog.set([]);
   }
 }
 
-const initial = loadPersisted();
-export const queryLog = writable<LogEntry[]>(initial);
+// ── Debounced flush ─────────────────────────────────────────────────────────
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Persist across restarts (searchable history).
-queryLog.subscribe((l) => {
-  try {
-    localStorage.setItem(STORAGE, JSON.stringify(l));
-  } catch {
-    /* storage unavailable / quota */
-  }
-});
+function scheduleFlush(entries: LogEntry[]) {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    api.saveQueryHistory(entries).catch(() => { /* ignore */ });
+    flushTimer = null;
+  }, 300);
+}
 
-let seq = initial.reduce((m, e) => Math.max(m, e.id), 0);
+function flushNow(entries: LogEntry[]) {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  api.saveQueryHistory(entries).catch(() => { /* ignore */ });
+}
 
+// ── Timestamp ───────────────────────────────────────────────────────────────
 function stamp(): { time: string; date: string } {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
@@ -44,23 +59,45 @@ function stamp(): { time: string; date: string } {
   };
 }
 
-/** Record a SQL statement that the app executed (newest appended at the end). */
-export function logSql(sql: string, opts: { ms?: number; error?: string } = {}) {
+// ── Public API ──────────────────────────────────────────────────────────────
+/** Record a SQL statement run by the user from the console. */
+export function logSql(
+  sql: string,
+  opts: { ms?: number; rowCount?: number; connectionId?: string | null; error?: string } = {}
+): void {
+  let entries: LogEntry[] = [];
   queryLog.update((l) => {
-    const next = [...l, { id: ++seq, ...stamp(), sql: sql.trim(), ms: opts.ms, error: opts.error }];
-    return next.length > MAX ? next.slice(next.length - MAX) : next;
+    const entry: LogEntry = {
+      id: ++seq,
+      ...stamp(),
+      sql: sql.trim(),
+      ms: opts.ms,
+      rowCount: opts.rowCount,
+      connectionId: opts.connectionId ?? null,
+      error: opts.error,
+    };
+    const next = [...l, entry];
+    entries = next.length > MAX_QUERY_LOG ? next.slice(next.length - MAX_QUERY_LOG) : next;
+    return entries;
   });
+  scheduleFlush(entries);
 }
 
-export function clearLog() {
+export function clearLog(): void {
   queryLog.set([]);
+  flushNow([]);
 }
 
-export function removeLog(id: number) {
-  queryLog.update((l) => l.filter((e) => e.id !== id));
+export function removeLog(id: number): void {
+  let entries: LogEntry[] = [];
+  queryLog.update((l) => {
+    entries = l.filter((e) => e.id !== id);
+    return entries;
+  });
+  flushNow(entries);
 }
 
-// ── Activity log ───────────────────────────────────────────────────────────
+// ── Activity log (unchanged — stays in localStorage) ───────────────────────
 // EVERY statement the app runs (table browses, cell edits, inserts/deletes,
 // console queries…). The bottom "Query History" panel shows this; the sidebar
 // "History" tab shows only console-run queries (queryLog above).
@@ -86,8 +123,11 @@ let actSeq = initialAct.reduce((m, e) => Math.max(m, e.id), 0);
 
 export function logActivity(sql: string, opts: { ms?: number; error?: string } = {}) {
   activityLog.update((l) => {
-    const next = [...l, { id: ++actSeq, ...stamp(), sql: sql.trim(), ms: opts.ms, error: opts.error }];
-    return next.length > MAX ? next.slice(next.length - MAX) : next;
+    const next = [
+      ...l,
+      { id: ++actSeq, ...stamp(), sql: sql.trim(), ms: opts.ms, connectionId: null, error: opts.error },
+    ];
+    return next.length > 500 ? next.slice(next.length - 500) : next;
   });
 }
 

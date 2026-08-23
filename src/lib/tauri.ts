@@ -15,6 +15,7 @@ import type {
   WorkspaceFile,
 } from "./types";
 import type { ColumnDraft } from "./ddl";
+import type { LogEntry } from "./stores/log";
 
 // One typed surface over all Rust commands. Add new commands here.
 export const api = {
@@ -120,4 +121,9 @@ export const api = {
   // Workspace snapshot persistence (KUE-006).
   loadWorkspaces: () => invoke<WorkspaceFile>("load_workspaces"),
   saveWorkspaces: (file: WorkspaceFile) => invoke<void>("save_workspaces", { file }),
+
+  // Query history persistence (#129).
+  loadQueryHistory: () => invoke<LogEntry[]>("load_query_history"),
+  saveQueryHistory: (entries: LogEntry[]) =>
+    invoke<void>("save_query_history", { entries }),
 };
