@@ -14,14 +14,15 @@ use crate::error::{AppError, AppResult};
 pub const CACHE_TTL: Duration = Duration::from_secs(300);
 
 pub struct SchemaCache {
-    entries: RwLock<HashMap<Uuid, CachedSchema>>,
+    pub(crate) entries: RwLock<HashMap<Uuid, CachedSchema>>,
 }
 
-struct CachedSchema {
+pub struct CachedSchema {
     schemas: Option<Vec<SchemaInfo>>,
     tables: HashMap<String, Vec<TableInfo>>,
     columns: HashMap<(String, String), Vec<ColumnInfo>>,
     fetched_at: Instant,
+    pub generation: u64,
 }
 
 impl CachedSchema {
@@ -31,6 +32,7 @@ impl CachedSchema {
             tables: HashMap::new(),
             columns: HashMap::new(),
             fetched_at: Instant::now(),
+            generation: 0,
         }
     }
     fn is_fresh(&self) -> bool {
@@ -47,22 +49,32 @@ impl SchemaCache {
 
     pub async fn schemas(&self, id: Uuid, driver: &dyn Driver) -> AppResult<Vec<SchemaInfo>> {
         // Fast path: read lock
-        if let Ok(read) = self.entries.read() {
+        let gen_before = if let Ok(read) = self.entries.read() {
             if let Some(entry) = read.get(&id) {
                 if entry.is_fresh() {
                     if let Some(cached) = &entry.schemas {
                         return Ok(cached.clone());
                     }
                 }
+                entry.generation
+            } else {
+                0
             }
-        }
-        // Slow path: fetch + write lock
+        } else {
+            0
+        };
+        // Slow path: fetch with no lock held, then write under lock
         let fresh = driver.list_schemas().await?;
         let mut write = self
             .entries
             .write()
             .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
+        if entry.generation != gen_before {
+            // invalidate() fired during the async fetch — return data to caller
+            // but don't cache the potentially stale snapshot.
+            return Ok(fresh);
+        }
         entry.schemas = Some(fresh.clone());
         entry.fetched_at = Instant::now();
         Ok(fresh)
@@ -74,21 +86,29 @@ impl SchemaCache {
         schema: &str,
         driver: &dyn Driver,
     ) -> AppResult<Vec<TableInfo>> {
-        if let Ok(read) = self.entries.read() {
+        let gen_before = if let Ok(read) = self.entries.read() {
             if let Some(entry) = read.get(&id) {
                 if entry.is_fresh() {
                     if let Some(cached) = entry.tables.get(schema) {
                         return Ok(cached.clone());
                     }
                 }
+                entry.generation
+            } else {
+                0
             }
-        }
+        } else {
+            0
+        };
         let fresh = driver.list_tables(schema).await?;
         let mut write = self
             .entries
             .write()
             .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
+        if entry.generation != gen_before {
+            return Ok(fresh);
+        }
         entry.tables.insert(schema.to_string(), fresh.clone());
         entry.fetched_at = Instant::now();
         Ok(fresh)
@@ -102,21 +122,29 @@ impl SchemaCache {
         driver: &dyn Driver,
     ) -> AppResult<Vec<ColumnInfo>> {
         let key = (schema.to_string(), table.to_string());
-        if let Ok(read) = self.entries.read() {
+        let gen_before = if let Ok(read) = self.entries.read() {
             if let Some(entry) = read.get(&id) {
                 if entry.is_fresh() {
                     if let Some(cached) = entry.columns.get(&key) {
                         return Ok(cached.clone());
                     }
                 }
+                entry.generation
+            } else {
+                0
             }
-        }
+        } else {
+            0
+        };
         let fresh = driver.list_columns(schema, table).await?;
         let mut write = self
             .entries
             .write()
             .map_err(|_| AppError::Other("cache lock poisoned".into()))?;
         let entry = write.entry(id).or_insert_with(CachedSchema::empty);
+        if entry.generation != gen_before {
+            return Ok(fresh);
+        }
         entry.columns.insert(key, fresh.clone());
         entry.fetched_at = Instant::now();
         Ok(fresh)
@@ -124,12 +152,25 @@ impl SchemaCache {
 
     pub fn invalidate(&self, id: Uuid) {
         if let Ok(mut write) = self.entries.write() {
-            write.remove(&id);
+            if let Some(entry) = write.get_mut(&id) {
+                entry.generation += 1;
+                entry.schemas = None;
+                entry.tables.clear();
+                entry.columns.clear();
+                // Push fetched_at into the past so is_fresh() returns false
+                // without changing the is_fresh() logic.
+                entry.fetched_at = Instant::now()
+                    .checked_sub(CACHE_TTL + Duration::from_secs(1))
+                    .unwrap_or_else(Instant::now);
+            }
+            // If the entry doesn't exist, nothing to invalidate.
         }
     }
 
     pub fn drop_entry(&self, id: Uuid) {
-        self.invalidate(id);
+        if let Ok(mut write) = self.entries.write() {
+            write.remove(&id);
+        }
     }
 }
 
@@ -298,5 +339,40 @@ mod tests {
         cache.schemas(id1, &driver).await.unwrap();
         cache.schemas(id2, &driver).await.unwrap();
         assert_eq!(driver.schemas_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn invalidate_marks_entry_not_removes() {
+        // After invalidate(), the cache entry must still exist (marked, not removed).
+        // After drop_entry(), the entry must be gone.
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+        cache.schemas(id, &driver).await.unwrap();
+
+        cache.invalidate(id);
+        assert!(
+            cache.entries.read().unwrap().contains_key(&id),
+            "invalidate() must mark, not remove"
+        );
+
+        cache.drop_entry(id);
+        assert!(
+            !cache.entries.read().unwrap().contains_key(&id),
+            "drop_entry() must hard-remove"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_bumps_generation() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+        cache.schemas(id, &driver).await.unwrap();
+        let gen0 = cache.entries.read().unwrap().get(&id).unwrap().generation;
+
+        cache.invalidate(id);
+        let gen1 = cache.entries.read().unwrap().get(&id).unwrap().generation;
+        assert!(gen1 > gen0, "invalidate() must bump the generation counter");
     }
 }
