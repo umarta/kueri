@@ -372,6 +372,55 @@ pub async fn execute_query_confirmed(
 }
 
 #[tauri::command]
+pub async fn execute_query_params(
+    state: State<'_, AppState>,
+    id: String,
+    sql: String,
+    params: Vec<serde_json::Value>,
+    query_id: String,
+    safety: crate::safety::SafetyLevel,
+) -> AppResult<QueryResult> {
+    let uuid =
+        Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;
+
+    // Same safety preflight as execute_query — classify the substituted SQL.
+    for stmt in crate::sql_classify::split_statements(&sql) {
+        let effect = crate::sql_classify::classify_one(&stmt);
+        let has_where = matches!(effect, crate::sql_classify::SqlEffect::Write)
+            && crate::sql_classify::has_where_clause(&stmt);
+        match safety.decide(effect, has_where, &stmt) {
+            crate::safety::SafetyDecision::Allow => continue,
+            crate::safety::SafetyDecision::NeedsConfirmation { reason, statement } => {
+                let token = state.confirm_tokens.issue(uuid, sql.clone());
+                return Err(AppError::NeedsConfirmation {
+                    token,
+                    statement,
+                    reason,
+                });
+            }
+            crate::safety::SafetyDecision::Reject { reason, statement } => {
+                return Err(AppError::SafetyRejected { statement, reason });
+            }
+        }
+    }
+
+    let driver = state.get(uuid)?;
+    let effects = crate::sql_classify::classify(&sql);
+    let task = tokio::spawn(async move { driver.run_query_params(&sql, &params).await });
+    state.register_query(query_id.clone(), task.abort_handle());
+    let res = task.await;
+    state.finish_query(&query_id);
+    if effects.iter().any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl)) {
+        state.schema_cache.invalidate(uuid);
+    }
+    match res {
+        Ok(inner) => inner,
+        Err(e) if e.is_cancelled() => Err(AppError::Other("Query cancelled.".into())),
+        Err(e) => Err(AppError::Other(format!("query task failed: {e}"))),
+    }
+}
+
+#[tauri::command]
 pub async fn begin_txn(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let uuid =
         Uuid::parse_str(&id).map_err(|e| AppError::Other(format!("invalid connection id: {e}")))?;

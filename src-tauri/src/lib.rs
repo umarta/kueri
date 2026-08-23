@@ -59,6 +59,7 @@ pub fn run() {
             commands::primary_keys,
             commands::execute_query,
             commands::execute_query_confirmed,
+            commands::execute_query_params,
             commands::cancel_query,
             commands::begin_txn,
             commands::commit_txn,

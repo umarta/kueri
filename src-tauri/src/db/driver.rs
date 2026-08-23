@@ -96,6 +96,17 @@ pub trait Driver: Send + Sync {
     /// the frontend then falls back to a full-row WHERE for edits.
     async fn list_primary_keys(&self, schema: &str, table: &str) -> AppResult<Vec<String>>;
     async fn run_query(&self, sql: &str) -> AppResult<QueryResult>;
+    /// Run a parameterized query. Parameters are bound as strings (MVP).
+    /// Default delegates to `run_query` when params is empty; returns error otherwise.
+    /// Postgres, MySQL, and SQLite override this with `.bind()` chains.
+    async fn run_query_params(&self, sql: &str, params: &[Value]) -> AppResult<QueryResult> {
+        if params.is_empty() {
+            return self.run_query(sql).await;
+        }
+        Err(AppError::Other(
+            "Parameterized queries are not supported for this driver.".into(),
+        ))
+    }
     async fn close(&self);
 
     // ── Manual transactions (pin one connection for BEGIN…COMMIT/ROLLBACK) ───────

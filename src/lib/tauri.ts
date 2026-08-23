@@ -51,6 +51,8 @@ export const api = {
     invoke<QueryResult>("execute_query", { id, sql, queryId, safety }),
   executeQueryConfirmed: (token: string, queryId: string) =>
     invoke<QueryResult>("execute_query_confirmed", { token, queryId }),
+  executeQueryParams: (id: string, sql: string, params: unknown[], queryId: string, safety: SafetyLevel) =>
+    invoke<QueryResult>("execute_query_params", { id, sql, params, queryId, safety }),
   cancelQuery: (queryId: string) => invoke<void>("cancel_query", { queryId }),
   beginTxn: (id: string) => invoke<void>("begin_txn", { id }),
   commitTxn: (id: string) => invoke<void>("commit_txn", { id }),

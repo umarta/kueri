@@ -34,7 +34,7 @@ type SafetyRejectedError = {
     message: string;
 };
 
-function isNeedsConfirmation(err: unknown): err is NeedsConfirmationError {
+export function isNeedsConfirmation(err: unknown): err is NeedsConfirmationError {
     return typeof err === "object" && err !== null &&
         (err as { kind?: unknown }).kind === "needs-confirmation";
 }
