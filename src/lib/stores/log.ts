@@ -24,12 +24,11 @@ export async function initQueryLog(): Promise<void> {
   try {
     const entries = await api.loadQueryHistory();
     queryLog.set(entries);
-    if (entries.length > 0) {
-      seq = entries.reduce((m, e) => Math.max(m, e.id), 0);
-    }
+    seq = entries.reduce((m, e) => Math.max(m, e.id), 0);
   } catch {
     // Tauri not available (browser dev) or file missing — start empty.
     queryLog.set([]);
+    seq = 0;
   }
 }
 
