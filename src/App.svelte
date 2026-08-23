@@ -38,7 +38,7 @@
   import { logSql, logActivity } from "./lib/stores/log";
   import type { ConnectionConfig, RowEdit, QueryTab, SafetyLevel } from "./lib/types";
   import SafetyConfirm from "./components/SafetyConfirm.svelte";
-  import { runQuerySafely, CancelledByUser, isSafetyRejected } from "./lib/safety/run";
+  import { runQuerySafely, CancelledByUser, isSafetyRejected, isNeedsConfirmation } from "./lib/safety/run";
   import { safetyPrompt, showSafetyModal } from "./lib/safety/modal";
   import { bannerText } from "./lib/safety/labels";
   import { get } from "svelte/store";
@@ -435,11 +435,22 @@
     const start = performance.now();
     try {
       const safety: SafetyLevel = get(currentWorkspace)?.safety ?? "off";
-      t.result = await api.executeQueryParams($activeConnectionId, sql, params, t.id, safety);
+      let result = await api.executeQueryParams($activeConnectionId, sql, params, t.id, safety).catch(async (e) => {
+        if (isNeedsConfirmation(e)) {
+          const confirmed = await showSafetyModal({ statement: e.statement, reason: e.reason });
+          if (!confirmed) throw new CancelledByUser();
+          // Retry with safety off — the user has already confirmed.
+          return await api.executeQueryParams($activeConnectionId!, sql, params, t.id, "off");
+        }
+        throw e;
+      });
+      t.result = result;
       const ms = Math.round(performance.now() - start);
       logActivity(sql, { ms });
       logSql(sql, { ms });
     } catch (e) {
+      if (e instanceof CancelledByUser) { t.running = false; sync(t); return; }
+      if (isSafetyRejected(e)) { showToast(false, `Safety blocked: ${(e as { message?: string }).message ?? String(e)}`); t.running = false; sync(t); return; }
       t.error = (e as { message?: string })?.message ?? String(e);
       t.result = null;
       const ms = Math.round(performance.now() - start);
