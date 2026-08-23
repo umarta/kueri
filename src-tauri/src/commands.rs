@@ -410,7 +410,10 @@ pub async fn execute_query_params(
     state.register_query(query_id.clone(), task.abort_handle());
     let res = task.await;
     state.finish_query(&query_id);
-    if effects.iter().any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl)) {
+    if effects
+        .iter()
+        .any(|e| matches!(e, crate::sql_classify::SqlEffect::Ddl))
+    {
         state.schema_cache.invalidate(uuid);
     }
     match res {
@@ -745,6 +748,29 @@ pub async fn save_workspaces(
     file: crate::workspace_persist::WorkspaceFile,
 ) -> AppResult<()> {
     workspace_store(&app)?.save(&file)
+}
+
+fn history_store(app: &AppHandle) -> AppResult<crate::history_store::HistoryStore> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| AppError::Other(format!("config dir: {e}")))?;
+    Ok(crate::history_store::HistoryStore::new(&dir))
+}
+
+#[tauri::command]
+pub async fn load_query_history(
+    app: AppHandle,
+) -> AppResult<Vec<crate::history_store::HistoryEntry>> {
+    history_store(&app)?.load()
+}
+
+#[tauri::command]
+pub async fn save_query_history(
+    app: AppHandle,
+    entries: Vec<crate::history_store::HistoryEntry>,
+) -> AppResult<()> {
+    history_store(&app)?.save(&entries)
 }
 
 #[cfg(test)]

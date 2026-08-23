@@ -15,6 +15,7 @@ pub mod ssh {
     pub mod profile;
     pub mod store;
 }
+pub mod history_store;
 pub mod tls;
 pub mod workspace_persist;
 
@@ -89,6 +90,8 @@ pub fn run() {
             commands::list_ssh_profile_dependents,
             commands::load_workspaces,
             commands::save_workspaces,
+            commands::load_query_history,
+            commands::save_query_history,
             pgtools::pg_export,
             pgtools::pg_import,
             clients::detect_clients,
