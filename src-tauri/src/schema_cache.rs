@@ -172,6 +172,34 @@ impl SchemaCache {
             write.remove(&id);
         }
     }
+
+    /// Evict the cached table list and all column lists for `schema`.
+    /// Does NOT evict the schema-list entry (schema still exists; only its
+    /// table contents changed). Bumps the generation counter so any
+    /// concurrent slow-path fetch skips its write-back.
+    pub fn invalidate_schema_tables(&self, id: Uuid, schema: &str) {
+        if let Ok(mut write) = self.entries.write() {
+            if let Some(entry) = write.get_mut(&id) {
+                entry.generation += 1;
+                entry.tables.remove(schema);
+                entry.columns.retain(|(s, _), _| s != schema);
+            }
+        }
+    }
+
+    /// Evict the cached column list for `(schema, table)` only.
+    /// Table lists and the schema list remain cached. Bumps the generation
+    /// counter so concurrent slow-path fetches skip their write-back.
+    pub fn invalidate_table_columns(&self, id: Uuid, schema: &str, table: &str) {
+        if let Ok(mut write) = self.entries.write() {
+            if let Some(entry) = write.get_mut(&id) {
+                entry.generation += 1;
+                entry
+                    .columns
+                    .remove(&(schema.to_string(), table.to_string()));
+            }
+        }
+    }
 }
 
 impl Default for SchemaCache {
@@ -374,5 +402,136 @@ mod tests {
         cache.invalidate(id);
         let gen1 = cache.entries.read().unwrap().get(&id).unwrap().generation;
         assert!(gen1 > gen0, "invalidate() must bump the generation counter");
+    }
+
+    #[tokio::test]
+    async fn invalidate_schema_tables_evicts_table_list_not_schema_list() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+
+        // Prime both schemas and tables for "public"
+        cache.schemas(id, &driver).await.unwrap();
+        cache.tables(id, "public", &driver).await.unwrap();
+        assert_eq!(driver.schemas_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(driver.tables_calls.load(Ordering::SeqCst), 1);
+
+        // Invalidate only the "public" table list
+        cache.invalidate_schema_tables(id, "public");
+
+        // Tables must be re-fetched; schemas must NOT require a re-fetch
+        cache.tables(id, "public", &driver).await.unwrap();
+        cache.schemas(id, &driver).await.unwrap();
+        assert_eq!(
+            driver.tables_calls.load(Ordering::SeqCst),
+            2,
+            "tables refetched"
+        );
+        assert_eq!(
+            driver.schemas_calls.load(Ordering::SeqCst),
+            1,
+            "schemas still cached"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_schema_tables_preserves_other_schema_caches() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+
+        cache.tables(id, "public", &driver).await.unwrap();
+        cache.tables(id, "atlas", &driver).await.unwrap();
+        assert_eq!(driver.tables_calls.load(Ordering::SeqCst), 2);
+
+        // Invalidate only "public"
+        cache.invalidate_schema_tables(id, "public");
+
+        // "atlas" must still be cached; "public" must re-fetch
+        cache.tables(id, "atlas", &driver).await.unwrap();
+        cache.tables(id, "public", &driver).await.unwrap();
+        assert_eq!(
+            driver.tables_calls.load(Ordering::SeqCst),
+            3,
+            "only public refetched"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_schema_tables_evicts_all_columns_for_schema() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+
+        cache.columns(id, "public", "users", &driver).await.unwrap();
+        cache
+            .columns(id, "public", "orders", &driver)
+            .await
+            .unwrap();
+        cache.columns(id, "atlas", "jobs", &driver).await.unwrap();
+        assert_eq!(driver.columns_calls.load(Ordering::SeqCst), 3);
+
+        cache.invalidate_schema_tables(id, "public");
+
+        // Both public columns evicted; atlas.jobs still cached
+        cache.columns(id, "public", "users", &driver).await.unwrap();
+        cache
+            .columns(id, "public", "orders", &driver)
+            .await
+            .unwrap();
+        cache.columns(id, "atlas", "jobs", &driver).await.unwrap();
+        assert_eq!(
+            driver.columns_calls.load(Ordering::SeqCst),
+            5,
+            "public.* evicted, atlas.jobs cached"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_table_columns_evicts_only_target_table() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+
+        cache.columns(id, "public", "users", &driver).await.unwrap();
+        cache
+            .columns(id, "public", "orders", &driver)
+            .await
+            .unwrap();
+        assert_eq!(driver.columns_calls.load(Ordering::SeqCst), 2);
+
+        cache.invalidate_table_columns(id, "public", "users");
+
+        // Only public.users evicted; public.orders still cached
+        cache
+            .columns(id, "public", "orders", &driver)
+            .await
+            .unwrap();
+        cache.columns(id, "public", "users", &driver).await.unwrap();
+        assert_eq!(
+            driver.columns_calls.load(Ordering::SeqCst),
+            3,
+            "only users evicted"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_table_columns_preserves_table_list() {
+        let cache = SchemaCache::new();
+        let driver = TestDriver::new();
+        let id = Uuid::new_v4();
+
+        cache.tables(id, "public", &driver).await.unwrap();
+        assert_eq!(driver.tables_calls.load(Ordering::SeqCst), 1);
+
+        cache.invalidate_table_columns(id, "public", "users");
+
+        // Table list must NOT be evicted
+        cache.tables(id, "public", &driver).await.unwrap();
+        assert_eq!(
+            driver.tables_calls.load(Ordering::SeqCst),
+            1,
+            "table list still cached"
+        );
     }
 }
