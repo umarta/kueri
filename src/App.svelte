@@ -1047,6 +1047,7 @@
             results: [],
             resultIdx: 0,
             preview: false,
+            params: {},
           };
         }
         return {
@@ -1073,6 +1074,7 @@
           results: [],
           resultIdx: 0,
           preview: false,
+          params: {},
         };
       });
       workspaceStates.update((m) => {
