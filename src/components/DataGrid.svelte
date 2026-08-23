@@ -5,6 +5,7 @@
   import { isDate, isDateTime, isDateTimeTz, toDateValue, toDateString, toDateOnlyString, combineTz, localOffset } from "../lib/datetime";
   import { openContextMenu } from "../lib/stores/contextMenu";
   import type { QueryResult, RowEdit, ColumnInfo } from "../lib/types";
+  import { pushEdit, applyUndo, type EditAction } from "../lib/editHistory";
 
   export let result: QueryResult | null = null;
   /** Column metadata (types) for the browsed table — drives type-aware editors. */
@@ -126,11 +127,13 @@
   let draft = "";
   let prev: QueryResult | null = null;
   let input: HTMLInputElement;
+  let editHistory: EditAction[] = [];
 
   $: if (result !== prev) {
     prev = result;
     edits = {};
     editing = null;
+    editHistory = [];
     selected = new Set();
     anchor = -1;
     active = null;
@@ -154,16 +157,27 @@
   function setNullCell(r: number, c: number) {
     if (!result) return;
     const k = key(r, c);
-    if (isNull(result.rows[r][c])) delete edits[k];
-    else edits[k] = null;
-    edits = edits;
+    if (isNull(result.rows[r][c])) {
+      delete edits[k];
+    } else {
+      editHistory = pushEdit(editHistory, k, edits);
+      edits[k] = null;
+      edits = edits;
+    }
   }
 
   function bulkSet(c: number, rows: number[], value: string | null) {
     for (const r of rows) {
       const k = key(r, c);
-      if (value === null ? isNull(result?.rows[r][c]) : fmt(result?.rows[r][c]) === value) delete edits[k];
-      else edits[k] = value;
+      const unchanged = value === null
+        ? isNull(result?.rows[r][c])
+        : fmt(result?.rows[r][c]) === value;
+      if (unchanged) {
+        delete edits[k];
+      } else {
+        editHistory = pushEdit(editHistory, k, edits);
+        edits[k] = value;
+      }
     }
     edits = edits;
   }
@@ -213,9 +227,15 @@
     const k = key(r, c);
     const orig = result.rows[r][c];
     const origStr = isNull(orig) ? "" : fmt(orig);
-    if (draft === origStr) delete edits[k];
-    else edits[k] = draft;
-    edits = edits;
+    if (draft === origStr) {
+      // User typed back the original value — un-stage without touching history.
+      delete edits[k];
+      edits = edits;
+    } else {
+      editHistory = pushEdit(editHistory, k, edits);
+      edits[k] = draft;
+      edits = edits;
+    }
     editing = null;
   }
 
@@ -225,7 +245,7 @@
     else if (e.key === "Tab") { e.preventDefault(); commitCell(); moveActive(0, e.shiftKey ? -1 : 1); refocusGrid(); }
   }
 
-  function discard() { edits = {}; editing = null; }
+  function discard() { edits = {}; editing = null; editHistory = []; }
 
   // ── Keyboard navigation (active cell) ────────────────────────────────────────
   let active: { r: number; vc: number } | null = null;
@@ -323,6 +343,14 @@
     if (editing) commitCell();
     if (Object.keys(edits).length) commit();
   }
+
+  export function undo(): void {
+    const result2 = applyUndo(editHistory, edits);
+    editHistory = result2.history;
+    edits = result2.edits;
+  }
+
+  $: undoable = editHistory.length > 0;
 
   function commit() {
     if (!result) return;
@@ -602,6 +630,9 @@
       <span class="badge">{pending.length}</span>
       <span class="ctext">unsaved {pending.length === 1 ? "change" : "changes"}</span>
       <div class="spacer"></div>
+      {#if undoable}
+        <button class="btn" on:click={undo} title="Undo last change (⌘Z)">Undo</button>
+      {/if}
       <button class="btn" on:click={discard}>Discard</button>
       <button class="btn btn-primary" on:click={commit}>Commit</button>
     </div>
