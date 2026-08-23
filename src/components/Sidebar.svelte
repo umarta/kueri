@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from "svelte";
   import { api } from "../lib/tauri";
-  import { activeConnectionId, activeConnection } from "../lib/stores/connection";
+  import { activeConnectionId, activeConnection, savedConnections } from "../lib/stores/connection";
   import { catalogTables, readOnly, setActiveSchema, activeSchema as activeSchemaStore } from "../lib/stores/workspaces";
   import { typeOptions, defaultIdColumn, type ColumnDraft } from "../lib/ddl";
   import { savedQueries, addSaved, removeSaved } from "../lib/stores/saved";
@@ -65,10 +65,19 @@
   $: savedShown = qFilter.trim()
     ? $savedQueries.filter((q) => `${q.name} ${q.sql}`.toLowerCase().includes(qFilter.trim().toLowerCase()))
     : $savedQueries;
-  $: historyShown = hFilter.trim()
-    ? $queryLog.filter((h) => h.sql.toLowerCase().includes(hFilter.trim().toLowerCase()))
+  // Connection filter for History tab.
+  let histConn: string | null = null;
+  $: histConnIds = [...new Set($queryLog.map((e) => e.connectionId).filter((id): id is string => id !== null))];
+  function connLabel(id: string): string {
+    const conn = $savedConnections.find((c) => c.id === id);
+    return conn?.name ?? id.slice(0, 8);
+  }
+  $: historyFiltered = histConn
+    ? $queryLog.filter((e) => e.connectionId === histConn)
     : $queryLog;
-  // Newest first, grouped by date.
+  $: historyShown = hFilter.trim()
+    ? historyFiltered.filter((h) => h.sql.toLowerCase().includes(hFilter.trim().toLowerCase()))
+    : historyFiltered;
   $: historyGroups = groupHistory(historyShown);
   function groupHistory(list: typeof $queryLog) {
     const byDate = new Map<string, typeof $queryLog>();
@@ -559,6 +568,14 @@
       <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       <input bind:value={hFilter} placeholder="Search for history…" spellcheck="false" />
     </div>
+    {#if histConnIds.length > 1}
+      <div class="conn-pills">
+        <button class="pill" class:active={histConn === null} on:click={() => (histConn = null)}>All</button>
+        {#each histConnIds as cid (cid)}
+          <button class="pill" class:active={histConn === cid} on:click={() => (histConn = cid)}>{connLabel(cid)}</button>
+        {/each}
+      </div>
+    {/if}
     <nav class="tree" aria-label="Query history">
       {#each historyGroups as [date, items] (date)}
         <div class="group-head">{fmtDate(date)}</div>
@@ -850,4 +867,27 @@
   .btn.danger { background: var(--danger, #e5484d); color: #fff; }
   .btn.danger:hover:not(:disabled) { filter: brightness(1.05); }
   .btn.danger:disabled { opacity: 0.5; }
+
+  .conn-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: var(--s-2) var(--s-3);
+  }
+  .pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-content);
+    color: var(--ink-soft);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pill:hover { background: var(--bg-elevated); }
+  .pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
 </style>
